@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"embed"
-	"flag"
 	"fmt"
 	"html/template"
 	"log"
@@ -21,6 +20,7 @@ import (
 	"github.com/anknown/ahocorasick"
 	"github.com/fsnotify/fsnotify"
 	"github.com/niklasfasching/go-org/org"
+	"github.com/spf13/cobra"
 )
 
 //go:embed templates/*.html
@@ -944,64 +944,104 @@ func runHTTPServer(dir string, port int) error {
 	return http.ListenAndServe(fmt.Sprintf(":%d", port), http.FileServer(http.Dir(absDir)))
 }
 
+var (
+	dir     string
+	force   bool
+	watch   bool
+	workers int
+	port    int
+	dest    string
+)
+
 func main() {
-	dir := flag.String("d", ".", "relative path to directory to scan")
-	workers := flag.Int("w", 8, "number of concurrent workers")
-	force := flag.Bool("force", false, "force rebuild all files")
-	findID := flag.String("find-id", "", "find the file containing the specified ID")
-	watch := flag.Bool("watch", false, "watch for file changes and rebuild automatically")
-	serve := flag.Bool("serve", false, "serve dest directory over HTTP")
-	port := flag.Int("port", 8080, "port for HTTP server")
-	dest := flag.String("dest", "public", "output directory for generated files")
-	flag.Parse()
+	var rootCmd = &cobra.Command{Use: "oxen"}
 
-	if *findID != "" {
-		absPath, err := filepath.Abs(*dir)
-		if err != nil {
-			log.Fatalf("Error getting absolute path: %v", err)
-		}
-
-		state.reset()
-		walkDirectoryConcurrent(absPath, *workers)
-		close(state.fileChan)
-
-		var fileProcessingWG sync.WaitGroup
-		for i := 0; i < *workers; i++ {
-			fileProcessingWG.Add(1)
-			go fileProcessingWorker(absPath, &fileProcessingWG)
-		}
-		fileProcessingWG.Wait()
-
-		if path, found := state.uuidMap.Load("id:" + *findID); found {
-			fmt.Printf("ID %s found in: %s\n", *findID, path.(string))
-		} else {
-			fmt.Printf("ID %s not found\n", *findID)
-		}
-		return
-	}
-
-	state.stats.startTime = time.Now()
-	state.reset()
-
-	if *serve {
-		go func() {
-			if err := runHTTPServer(*dest, *port); err != nil {
-				log.Printf("HTTP server error: %v", err)
+	var buildCmd = &cobra.Command{
+		Use:   "build <dir>",
+		Short: "Build the site from <dir>",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			if watch {
+				if err := runWatchMode(args[0], workers, force, dest); err != nil {
+					log.Fatalf("Watch mode failed: %v", err)
+				}
+			} else {
+				if err := buildSite(args[0], workers, force, dest); err != nil {
+					log.Fatalf("Build failed: %v", err)
+				}
 			}
-		}()
+		},
 	}
 
-	if *watch {
-		if err := runWatchMode(*dir, *workers, *force, *dest); err != nil {
-			log.Fatalf("Watch mode failed: %v", err)
-		}
-	} else {
-		if err := buildSite(*dir, *workers, *force, *dest); err != nil {
-			log.Fatalf("Build failed: %v", err)
-		}
-		if *serve {
-			fmt.Printf("\nServer running at http://localhost:%d\n", *port)
-			select {}
-		}
+	var serveCmd = &cobra.Command{
+		Use:   "serve <dir>",
+		Short: "Serve the built site",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			go func() {
+				if err := runHTTPServer(dest, port); err != nil {
+					log.Printf("HTTP server error: %v", err)
+				}
+			}()
+
+			if watch {
+				if err := runWatchMode(args[0], workers, force, dest); err != nil {
+					log.Fatalf("Watch mode failed: %v", err)
+				}
+			} else {
+				if err := buildSite(args[0], workers, force, dest); err != nil {
+					log.Fatalf("Build failed: %v", err)
+				}
+				fmt.Printf("\nServer running at http://localhost:%d\n", port)
+				select {}
+			}
+		},
+	}
+
+	var lookupCmd = &cobra.Command{
+		Use:   "lookup-id <dir> <id>",
+		Short: "Find the file containing the given ID",
+		Args:  cobra.ExactArgs(2),
+		Run: func(cmd *cobra.Command, args []string) {
+			absPath, err := filepath.Abs(args[0])
+			if err != nil {
+				log.Fatalf("Error getting absolute path: %v", err)
+			}
+
+			state.reset()
+			walkDirectoryConcurrent(absPath, workers)
+			close(state.fileChan)
+
+			var fileProcessingWG sync.WaitGroup
+			for range workers {
+				fileProcessingWG.Add(1)
+				go fileProcessingWorker(absPath, &fileProcessingWG)
+			}
+			fileProcessingWG.Wait()
+
+			if path, found := state.uuidMap.Load("id:" + args[1]); found {
+				fmt.Printf("ID %s found in: %s\n", args[1], path.(string))
+			} else {
+				fmt.Printf("ID %s not found\n", args[1])
+			}
+		},
+	}
+
+	buildCmd.Flags().BoolVarP(&force, "force", "f", false, "force rebuild all files")
+	buildCmd.Flags().BoolVarP(&watch, "watch", "w", false, "watch for changes and rebuild")
+	buildCmd.Flags().IntVarP(&workers, "workers", "j", 8, "number of concurrent workers")
+	buildCmd.Flags().StringVar(&dest, "dest", "public", "output directory")
+
+	serveCmd.Flags().BoolVarP(&force, "force", "f", false, "force rebuild all files")
+	serveCmd.Flags().BoolVarP(&watch, "watch", "w", false, "watch for changes and rebuild")
+	serveCmd.Flags().IntVarP(&workers, "workers", "j", 8, "number of concurrent workers")
+	serveCmd.Flags().IntVarP(&port, "port", "p", 8080, "port to serve on")
+	serveCmd.Flags().StringVar(&dest, "dest", "public", "output directory")
+
+	lookupCmd.Flags().IntVarP(&workers, "workers", "j", 8, "number of concurrent workers")
+
+	rootCmd.AddCommand(buildCmd, serveCmd, lookupCmd)
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
 	}
 }
