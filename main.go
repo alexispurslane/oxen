@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/anknown/ahocorasick"
+	"github.com/fsnotify/fsnotify"
 	"github.com/niklasfasching/go-org/org"
 )
 
@@ -34,12 +36,7 @@ type FileInfo struct {
 }
 
 type PageData struct {
-	Path    string
-	ModTime time.Time
-	Preview string
-	Title   string
-	Tags    []string
-	UUIDs   []string
+	FileInfo
 	Content template.HTML
 }
 
@@ -59,14 +56,14 @@ type IndexPageData struct {
 	Content     template.HTML
 }
 
-var (
-	fileChan   = make(chan FileInfo, 1000)
+type buildState struct {
+	fileChan   chan FileInfo
 	uuidMap    sync.Map
 	orgFiles   []FileInfo
 	orgFilesMu sync.Mutex
 	tagMap     sync.Map
-
-	stats struct {
+	destDir    string
+	stats      struct {
 		totalFiles     int64
 		filesWithUUIDs int64
 		filesGenerated int64
@@ -74,7 +71,26 @@ var (
 		errors         int64
 		startTime      time.Time
 	}
+}
 
+func (s *buildState) reset() {
+	s.fileChan = make(chan FileInfo, 1000)
+	s.orgFilesMu.Lock()
+	s.orgFiles = nil
+	s.orgFilesMu.Unlock()
+	s.uuidMap = sync.Map{}
+	s.tagMap = sync.Map{}
+	s.stats.totalFiles = 0
+	s.stats.filesWithUUIDs = 0
+	s.stats.filesGenerated = 0
+	s.stats.filesSkipped = 0
+	s.stats.errors = 0
+	s.stats.startTime = time.Now()
+}
+
+var state buildState
+
+var (
 	reDrawers         = regexp.MustCompile(`(?m)^\s*:PROPERTIES:[\s\S]*?:END:(?:\s*\n|\s*$)`)
 	reOrgKeywords     = regexp.MustCompile(`(?m)^\s*#\+\S+.*$`)
 	reDrawerProps     = regexp.MustCompile(`(?m)^\s*:\S+:\s*$`)
@@ -106,7 +122,7 @@ func walkDirectory(dir string, root string) {
 				relPath = strings.TrimPrefix(path, root)
 			}
 
-			fileChan <- FileInfo{
+			state.fileChan <- FileInfo{
 				Path:    relPath,
 				ModTime: info.ModTime(),
 			}
@@ -151,7 +167,7 @@ func walkDirectoryConcurrent(root string, workers int) {
 				continue
 			}
 
-			fileChan <- FileInfo{
+			state.fileChan <- FileInfo{
 				Path:    entry.Name(),
 				ModTime: info.ModTime(),
 			}
@@ -240,16 +256,16 @@ func processFile(filePath, root string) (*FileInfo, error) {
 	}
 
 	for _, uuid := range resultFI.UUIDs {
-		uuidMap.Store("id:"+uuid, filePath)
+		state.uuidMap.Store("id:"+uuid, filePath)
 	}
 
 	return resultFI, nil
 }
 
-func phase2Worker(root string, wg *sync.WaitGroup) {
+func fileProcessingWorker(root string, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	for fi := range fileChan {
+	for fi := range state.fileChan {
 		fileinfo, err := processFile(fi.Path, root)
 		if err != nil {
 			log.Printf("Error processing %s: %v", fi.Path, err)
@@ -260,17 +276,17 @@ func phase2Worker(root string, wg *sync.WaitGroup) {
 			continue
 		}
 
-		atomic.AddInt64(&stats.totalFiles, 1)
+		atomic.AddInt64(&state.stats.totalFiles, 1)
 		if len(fileinfo.UUIDs) > 0 {
-			atomic.AddInt64(&stats.filesWithUUIDs, 1)
+			atomic.AddInt64(&state.stats.filesWithUUIDs, 1)
 		}
 
-		orgFilesMu.Lock()
-		orgFiles = append(orgFiles, *fileinfo)
-		orgFilesMu.Unlock()
+		state.orgFilesMu.Lock()
+		state.orgFiles = append(state.orgFiles, *fileinfo)
+		state.orgFilesMu.Unlock()
 
 		for _, tag := range fileinfo.Tags {
-			existing, _ := tagMap.LoadOrStore(tag, []FileInfo{*fileinfo})
+			existing, _ := state.tagMap.LoadOrStore(tag, []FileInfo{*fileinfo})
 			if existingSlice, ok := existing.([]FileInfo); ok {
 				duplicate := false
 				for _, f := range existingSlice {
@@ -280,7 +296,7 @@ func phase2Worker(root string, wg *sync.WaitGroup) {
 					}
 				}
 				if !duplicate {
-					tagMap.Store(tag, append(existingSlice, *fileinfo))
+					state.tagMap.Store(tag, append(existingSlice, *fileinfo))
 				}
 			}
 		}
@@ -469,14 +485,14 @@ func generateHTML(fi FileInfo, root string, keywords []string, targetPaths []str
 	}
 
 	absPath := filepath.Join(root, fi.Path)
-	publicDir := filepath.Join(root, "public")
+	publicDir := state.destDir
 	htmlRelativePath := strings.TrimSuffix(fi.Path, ".org") + ".html"
 	outputPath := filepath.Join(publicDir, htmlRelativePath)
 
 	if !forceRebuild {
 		if htmlInfo, err := os.Stat(outputPath); err == nil {
 			if !fi.ModTime.After(htmlInfo.ModTime()) && !tmplModTime.After(htmlInfo.ModTime()) {
-				atomic.AddInt64(&stats.filesSkipped, 1)
+				atomic.AddInt64(&state.stats.filesSkipped, 1)
 				return nil
 			}
 		}
@@ -484,7 +500,7 @@ func generateHTML(fi FileInfo, root string, keywords []string, targetPaths []str
 
 	data, err := os.ReadFile(absPath)
 	if err != nil {
-		atomic.AddInt64(&stats.errors, 1)
+		atomic.AddInt64(&state.stats.errors, 1)
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
@@ -492,7 +508,7 @@ func generateHTML(fi FileInfo, root string, keywords []string, targetPaths []str
 
 	htmlContent, err := convertOrgToHTML(replacedData, fi.Path)
 	if err != nil {
-		atomic.AddInt64(&stats.errors, 1)
+		atomic.AddInt64(&state.stats.errors, 1)
 		return fmt.Errorf("failed to convert to HTML: %w", err)
 	}
 
@@ -500,33 +516,28 @@ func generateHTML(fi FileInfo, root string, keywords []string, targetPaths []str
 	title = strings.ReplaceAll(title, "_", " ")
 
 	pageData := PageData{
-		Path:    fi.Path,
-		ModTime: fi.ModTime,
-		Preview: fi.Preview,
-		Title:   fi.Title,
-		Tags:    fi.Tags,
-		UUIDs:   fi.UUIDs,
-		Content: template.HTML(htmlContent),
+		FileInfo: fi,
+		Content:  template.HTML(htmlContent),
 	}
 
 	var outputBuf bytes.Buffer
 	if err := tmpl.ExecuteTemplate(&outputBuf, "page-template.html", pageData); err != nil {
-		atomic.AddInt64(&stats.errors, 1)
+		atomic.AddInt64(&state.stats.errors, 1)
 		return fmt.Errorf("failed to execute template: %w", err)
 	}
 
 	outputDir := filepath.Dir(outputPath)
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		atomic.AddInt64(&stats.errors, 1)
+		atomic.AddInt64(&state.stats.errors, 1)
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
 	if err := os.WriteFile(outputPath, outputBuf.Bytes(), 0644); err != nil {
-		atomic.AddInt64(&stats.errors, 1)
+		atomic.AddInt64(&state.stats.errors, 1)
 		return fmt.Errorf("failed to write HTML: %w", err)
 	}
 
-	atomic.AddInt64(&stats.filesGenerated, 1)
+	atomic.AddInt64(&state.stats.filesGenerated, 1)
 	return nil
 }
 
@@ -534,7 +545,7 @@ func phase3(root string, workers int, tmpl *template.Template, tmplModTime time.
 	var keywords []string
 	var replacements []string
 
-	uuidMap.Range(func(key, value any) bool {
+	state.uuidMap.Range(func(key, value any) bool {
 		keywords = append(keywords, key.(string))
 		replacements = append(replacements, value.(string))
 		return true
@@ -549,14 +560,14 @@ func phase3(root string, workers int, tmpl *template.Template, tmplModTime time.
 			defer wg.Done()
 			for fi := range fileQueue {
 				if err := generateHTML(fi, root, keywords, replacements, tmpl, tmplModTime, forceRebuild); err != nil {
-					atomic.AddInt64(&stats.errors, 1)
+					atomic.AddInt64(&state.stats.errors, 1)
 					log.Printf("Error generating %s: %v", fi.Path, err)
 				}
 			}
 		}()
 	}
 
-	for _, fi := range orgFiles {
+	for _, fi := range state.orgFiles {
 		fileQueue <- fi
 	}
 	close(fileQueue)
@@ -564,9 +575,9 @@ func phase3(root string, workers int, tmpl *template.Template, tmplModTime time.
 }
 
 func generateTagPages(root string, tmpl *template.Template, tmplModTime time.Time, forceRebuild bool) {
-	publicDir := filepath.Join(root, "public")
+	publicDir := state.destDir
 
-	tagMap.Range(func(key, value any) bool {
+	state.tagMap.Range(func(key, value any) bool {
 		tag := key.(string)
 		files := value.([]FileInfo)
 
@@ -587,16 +598,16 @@ func generateTagPages(root string, tmpl *template.Template, tmplModTime time.Tim
 
 		var outputBuf bytes.Buffer
 		if err := tmpl.ExecuteTemplate(&outputBuf, "tag-page-template.html", tagData); err != nil {
-			atomic.AddInt64(&stats.errors, 1)
+			atomic.AddInt64(&state.stats.errors, 1)
 			log.Printf("Failed to execute tag template for %s: %v", tag, err)
 			return true
 		}
 
 		if err := os.WriteFile(outputPath, outputBuf.Bytes(), 0644); err != nil {
-			atomic.AddInt64(&stats.errors, 1)
+			atomic.AddInt64(&state.stats.errors, 1)
 			log.Printf("Failed to write tag page %s: %v", outputPath, err)
 		} else {
-			atomic.AddInt64(&stats.filesGenerated, 1)
+			atomic.AddInt64(&state.stats.filesGenerated, 1)
 		}
 
 		return true
@@ -604,7 +615,7 @@ func generateTagPages(root string, tmpl *template.Template, tmplModTime time.Tim
 }
 
 func generateIndexPage(root string, tmpl *template.Template, tmplModTime time.Time, forceRebuild bool) {
-	publicDir := filepath.Join(root, "public")
+	publicDir := state.destDir
 	outputPath := filepath.Join(publicDir, "index.html")
 
 	if !forceRebuild {
@@ -616,9 +627,9 @@ func generateIndexPage(root string, tmpl *template.Template, tmplModTime time.Ti
 	}
 
 	recentFiles := make([]FileInfo, 0, 5)
-	if len(orgFiles) > 0 {
-		sorted := make([]FileInfo, len(orgFiles))
-		copy(sorted, orgFiles)
+	if len(state.orgFiles) > 0 {
+		sorted := make([]FileInfo, len(state.orgFiles))
+		copy(sorted, state.orgFiles)
 		sort.Slice(sorted, func(i, j int) bool {
 			return sorted[i].ModTime.After(sorted[j].ModTime)
 		})
@@ -630,7 +641,7 @@ func generateIndexPage(root string, tmpl *template.Template, tmplModTime time.Ti
 	}
 
 	var tags []TagInfo
-	tagMap.Range(func(key, value any) bool {
+	state.tagMap.Range(func(key, value any) bool {
 		tag := key.(string)
 		files := value.([]FileInfo)
 		tags = append(tags, TagInfo{
@@ -659,22 +670,22 @@ func generateIndexPage(root string, tmpl *template.Template, tmplModTime time.Ti
 
 	var outputBuf bytes.Buffer
 	if err := tmpl.ExecuteTemplate(&outputBuf, "index-page-template.html", indexData); err != nil {
-		atomic.AddInt64(&stats.errors, 1)
+		atomic.AddInt64(&state.stats.errors, 1)
 		log.Printf("Failed to execute index template: %v", err)
 		return
 	}
 
 	if err := os.WriteFile(outputPath, outputBuf.Bytes(), 0644); err != nil {
-		atomic.AddInt64(&stats.errors, 1)
+		atomic.AddInt64(&state.stats.errors, 1)
 		log.Printf("Failed to write index page: %v", err)
 	} else {
-		atomic.AddInt64(&stats.filesGenerated, 1)
+		atomic.AddInt64(&state.stats.filesGenerated, 1)
 	}
 }
 
 func copyStaticFiles(root string) {
 	staticDir := filepath.Join(root, "static")
-	publicDir := filepath.Join(root, "public")
+	publicDir := state.destDir
 
 	entries, err := os.ReadDir(staticDir)
 	if err != nil {
@@ -700,9 +711,9 @@ func copyStaticFiles(root string) {
 
 		if err := copyFile(srcPath, dstPath); err != nil {
 			log.Printf("Failed to copy %s: %v", entry.Name(), err)
-			atomic.AddInt64(&stats.errors, 1)
+			atomic.AddInt64(&state.stats.errors, 1)
 		} else {
-			atomic.AddInt64(&stats.filesGenerated, 1)
+			atomic.AddInt64(&state.stats.filesGenerated, 1)
 		}
 	}
 }
@@ -716,70 +727,56 @@ func copyFile(src, dst string) error {
 }
 
 func printStats() {
-	duration := time.Since(stats.startTime)
+	duration := time.Since(state.stats.startTime)
 	fmt.Printf("\n=== Generation Complete ===\n")
-	fmt.Printf("Total files scanned:    %d\n", atomic.LoadInt64(&stats.totalFiles))
-	fmt.Printf("Files with UUIDs:       %d\n", atomic.LoadInt64(&stats.filesWithUUIDs))
-	fmt.Printf("Files generated:        %d\n", atomic.LoadInt64(&stats.filesGenerated))
-	fmt.Printf("Files skipped:          %d\n", atomic.LoadInt64(&stats.filesSkipped))
-	fmt.Printf("Errors:                 %d\n", atomic.LoadInt64(&stats.errors))
+	fmt.Printf("Total files scanned:    %d\n", atomic.LoadInt64(&state.stats.totalFiles))
+	fmt.Printf("Files with UUIDs:       %d\n", atomic.LoadInt64(&state.stats.filesWithUUIDs))
+	fmt.Printf("Files generated:        %d\n", atomic.LoadInt64(&state.stats.filesGenerated))
+	fmt.Printf("Files skipped:          %d\n", atomic.LoadInt64(&state.stats.filesSkipped))
+	fmt.Printf("Errors:                 %d\n", atomic.LoadInt64(&state.stats.errors))
 	fmt.Printf("Duration:               %v\n", duration.Round(time.Millisecond))
 }
 
-func main() {
-	dir := flag.String("d", ".", "relative path to directory to scan")
-	workers := flag.Int("w", 8, "number of concurrent workers")
-	force := flag.Bool("force", false, "force rebuild all files")
-	findID := flag.String("find-id", "", "find the file containing the specified ID")
-	flag.Parse()
-
-	if *findID != "" {
-		absPath, err := filepath.Abs(*dir)
-		if err != nil {
-			log.Fatalf("Error getting absolute path: %v", err)
-		}
-
-		walkDirectoryConcurrent(absPath, *workers)
-		close(fileChan)
-
-		var phase2WG sync.WaitGroup
-		for i := 0; i < *workers; i++ {
-			phase2WG.Add(1)
-			go phase2Worker(absPath, &phase2WG)
-		}
-		phase2WG.Wait()
-
-		if path, found := uuidMap.Load("id:" + *findID); found {
-			fmt.Printf("ID %s found in: %s\n", *findID, path.(string))
-		} else {
-			fmt.Printf("ID %s not found\n", *findID)
-		}
-		return
-	}
-
-	stats.startTime = time.Now()
-
-	absPath, err := filepath.Abs(*dir)
+func buildSite(root string, workers int, forceRebuild bool, destDir string) error {
+	state.reset()
+	absDestDir, err := filepath.Abs(destDir)
 	if err != nil {
-		log.Fatalf("Error getting absolute path: %v", err)
+		return fmt.Errorf("error getting absolute path for destDir: %w", err)
+	}
+	state.destDir = absDestDir
+
+	if !forceRebuild {
+		entries, err := os.ReadDir(absDestDir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				forceRebuild = true
+			}
+		} else if len(entries) == 0 {
+			forceRebuild = true
+		}
 	}
 
-	var phase2WG sync.WaitGroup
-
-	for i := 0; i < *workers; i++ {
-		phase2WG.Add(1)
-		go phase2Worker(absPath, &phase2WG)
+	absPath, err := filepath.Abs(root)
+	if err != nil {
+		return fmt.Errorf("error getting absolute path: %w", err)
 	}
 
-	var phase1WG sync.WaitGroup
+	var fileProcessingWG sync.WaitGroup
 
-	phase1WG.Go(func() {
-		walkDirectoryConcurrent(absPath, *workers)
-		close(fileChan)
+	for range workers {
+		fileProcessingWG.Add(1)
+		go fileProcessingWorker(absPath, &fileProcessingWG)
+	}
+
+	var dirWalkingWG sync.WaitGroup
+
+	dirWalkingWG.Go(func() {
+		walkDirectoryConcurrent(absPath, workers)
+		close(state.fileChan)
 	})
 
-	phase2WG.Wait()
-	phase1WG.Wait()
+	fileProcessingWG.Wait()
+	dirWalkingWG.Wait()
 
 	funcMap := template.FuncMap{
 		"pathNoExt": func(path string) string {
@@ -792,7 +789,7 @@ func main() {
 		"templates/page-template.html",
 	)
 	if err != nil {
-		log.Fatalf("Failed to parse page template: %v", err)
+		return fmt.Errorf("failed to parse page template: %w", err)
 	}
 
 	tagTmpl, err := template.New("tag-page-template.html").Funcs(funcMap).ParseFS(templates,
@@ -800,7 +797,7 @@ func main() {
 		"templates/tag-page-template.html",
 	)
 	if err != nil {
-		log.Fatalf("Failed to parse tag template: %v", err)
+		return fmt.Errorf("failed to parse tag template: %w", err)
 	}
 
 	indexTmpl, err := template.New("index-page-template.html").Funcs(funcMap).ParseFS(templates,
@@ -808,12 +805,203 @@ func main() {
 		"templates/index-page-template.html",
 	)
 	if err != nil {
-		log.Fatalf("Failed to parse index template: %v", err)
+		return fmt.Errorf("failed to parse index template: %w", err)
 	}
 
-	phase3(absPath, *workers, pageTmpl, time.Time{}, *force)
-	generateTagPages(absPath, tagTmpl, time.Time{}, *force)
-	generateIndexPage(absPath, indexTmpl, time.Time{}, *force)
+	phase3(absPath, workers, pageTmpl, time.Time{}, forceRebuild)
+	generateTagPages(absPath, tagTmpl, time.Time{}, forceRebuild)
+	generateIndexPage(absPath, indexTmpl, time.Time{}, forceRebuild)
 	copyStaticFiles(absPath)
 	printStats()
+
+	return nil
+}
+
+func runWatchMode(root string, workers int, forceRebuild bool, destDir string) error {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return fmt.Errorf("failed to create watcher: %w", err)
+	}
+	defer watcher.Close()
+
+	// Run initial build
+	fmt.Println("Starting initial build...")
+	if err := buildSite(root, workers, forceRebuild, destDir); err != nil {
+		log.Printf("Initial build failed: %v", err)
+	}
+
+	absPath, err := filepath.Abs(root)
+	if err != nil {
+		return fmt.Errorf("error getting absolute path: %w", err)
+	}
+
+	// Add the root directory
+	if err := watcher.Add(absPath); err != nil {
+		return fmt.Errorf("failed to watch root directory: %w", err)
+	}
+
+	// Walk directory tree and add all subdirectories to watcher
+	destDirName := filepath.Base(state.destDir)
+	err = filepath.WalkDir(absPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() && d.Name() != destDirName {
+			if err := watcher.Add(path); err != nil {
+				log.Printf("Warning: failed to watch directory %s: %v", path, err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to walk directories: %w", err)
+	}
+
+	// Channel to signal rebuilds
+	rebuildChan := make(chan bool, 1)
+	hasPendingRebuild := false
+
+	// Process events in a goroutine
+	go func() {
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+
+				// Only interested in create, write, remove, rename
+				if event.Op&(fsnotify.Create|fsnotify.Write|fsnotify.Remove|fsnotify.Rename) == 0 {
+					continue
+				}
+
+				// Skip anything in public directory
+				if strings.HasPrefix(event.Name, state.destDir) {
+					continue
+				}
+
+				// If a new directory is created, watch it
+				if event.Op&fsnotify.Create == fsnotify.Create {
+					if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
+						if err := watcher.Add(event.Name); err != nil {
+							log.Printf("Warning: failed to watch new directory %s: %v", event.Name, err)
+						}
+					}
+				}
+
+				// Print watcher event for debugging
+				log.Printf("Watcher event: %v %s", event.Op, event.Name)
+
+				// Trigger rebuild
+				if !hasPendingRebuild {
+					hasPendingRebuild = true
+					select {
+					case rebuildChan <- true:
+					default:
+					}
+				}
+
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				log.Printf("Watcher error: %v", err)
+			}
+		}
+	}()
+
+	fmt.Printf("Watching %s for changes... (Press Ctrl+C to stop)\n", absPath)
+
+	// Main watch loop
+	for {
+		<-rebuildChan
+		hasPendingRebuild = false
+
+		// Debounce: wait a bit for more changes
+		time.Sleep(100 * time.Millisecond)
+
+		// Drain any additional rebuild signals
+		select {
+		case <-rebuildChan:
+		default:
+		}
+
+		fmt.Println("\nChanges detected, rebuilding...")
+		if err := buildSite(root, workers, forceRebuild, destDir); err != nil {
+			log.Printf("Build failed: %v", err)
+		}
+		fmt.Printf("\nWatching %s for changes... (Press Ctrl+C to stop)\n", absPath)
+	}
+}
+
+func runHTTPServer(dir string, port int) error {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return fmt.Errorf("error getting absolute path: %w", err)
+	}
+
+	fmt.Printf("Serving %s on http://localhost:%d\n", absDir, port)
+	return http.ListenAndServe(fmt.Sprintf(":%d", port), http.FileServer(http.Dir(absDir)))
+}
+
+func main() {
+	dir := flag.String("d", ".", "relative path to directory to scan")
+	workers := flag.Int("w", 8, "number of concurrent workers")
+	force := flag.Bool("force", false, "force rebuild all files")
+	findID := flag.String("find-id", "", "find the file containing the specified ID")
+	watch := flag.Bool("watch", false, "watch for file changes and rebuild automatically")
+	serve := flag.Bool("serve", false, "serve dest directory over HTTP")
+	port := flag.Int("port", 8080, "port for HTTP server")
+	dest := flag.String("dest", "public", "output directory for generated files")
+	flag.Parse()
+
+	if *findID != "" {
+		absPath, err := filepath.Abs(*dir)
+		if err != nil {
+			log.Fatalf("Error getting absolute path: %v", err)
+		}
+
+		state.reset()
+		walkDirectoryConcurrent(absPath, *workers)
+		close(state.fileChan)
+
+		var fileProcessingWG sync.WaitGroup
+		for i := 0; i < *workers; i++ {
+			fileProcessingWG.Add(1)
+			go fileProcessingWorker(absPath, &fileProcessingWG)
+		}
+		fileProcessingWG.Wait()
+
+		if path, found := state.uuidMap.Load("id:" + *findID); found {
+			fmt.Printf("ID %s found in: %s\n", *findID, path.(string))
+		} else {
+			fmt.Printf("ID %s not found\n", *findID)
+		}
+		return
+	}
+
+	state.stats.startTime = time.Now()
+	state.reset()
+
+	if *serve {
+		go func() {
+			if err := runHTTPServer(*dest, *port); err != nil {
+				log.Printf("HTTP server error: %v", err)
+			}
+		}()
+	}
+
+	if *watch {
+		if err := runWatchMode(*dir, *workers, *force, *dest); err != nil {
+			log.Fatalf("Watch mode failed: %v", err)
+		}
+	} else {
+		if err := buildSite(*dir, *workers, *force, *dest); err != nil {
+			log.Fatalf("Build failed: %v", err)
+		}
+		if *serve {
+			fmt.Printf("\nServer running at http://localhost:%d\n", *port)
+			select {}
+		}
+	}
 }
