@@ -17,7 +17,6 @@ import (
 // and TagMap for cross-reference lookups, plus a GenerationResult.
 func GetAndProcessOrgFiles(ctx BuildContext) (*ProcessedFiles, GenerationResult) {
 	files := collectOrgFiles(ctx.Root)
-	numWorkers := min(ctx.Workers, len(files))
 
 	procFiles := &ProcessedFiles{
 		Files:   files,
@@ -27,13 +26,38 @@ func GetAndProcessOrgFiles(ctx BuildContext) (*ProcessedFiles, GenerationResult)
 
 	var filesWithUUIDs int64
 	var wg sync.WaitGroup
-	for chunk := range filesToSpans(files, numWorkers) {
+	for i := range files {
 		wg.Add(1)
-		go func(chunk []FileInfo) {
+		go func(idx int) {
 			defer wg.Done()
-			n := processSpan(chunk, ctx.Root, procFiles)
-			atomic.AddInt64(&filesWithUUIDs, n)
-		}(chunk)
+			fi, err := processFile(files[idx].Path, ctx.Root, procFiles)
+			if err != nil {
+				log.Printf("Error processing %s: %v", files[idx].Path, err)
+				return
+			}
+			if fi == nil {
+				return
+			}
+			files[idx] = *fi
+			if len(fi.UUIDs) > 0 {
+				atomic.AddInt64(&filesWithUUIDs, 1)
+			}
+			for _, tag := range fi.Tags {
+				existing, _ := procFiles.TagMap.LoadOrStore(tag, []FileInfo{*fi})
+				if existingSlice, ok := existing.([]FileInfo); ok {
+					duplicate := false
+					for _, f := range existingSlice {
+						if f.Path == fi.Path {
+							duplicate = true
+							break
+						}
+					}
+					if !duplicate {
+						procFiles.TagMap.Store(tag, append(existingSlice, *fi))
+					}
+				}
+			}
+		}(i)
 	}
 	wg.Wait()
 
@@ -67,42 +91,6 @@ func collectOrgFiles(root string) []FileInfo {
 		return nil
 	})
 	return files
-}
-
-func processSpan(chunk []FileInfo, root string, procFiles *ProcessedFiles) int64 {
-	var filesWithUUIDs int64
-	for i := range chunk {
-		fi, err := processFile(chunk[i].Path, root, procFiles)
-		if err != nil {
-			log.Printf("Error processing %s: %v", chunk[i].Path, err)
-			continue
-		}
-		if fi == nil {
-			continue
-		}
-		chunk[i] = *fi
-
-		if len(fi.UUIDs) > 0 {
-			filesWithUUIDs++
-		}
-
-		for _, tag := range fi.Tags {
-			existing, _ := procFiles.TagMap.LoadOrStore(tag, []FileInfo{*fi})
-			if existingSlice, ok := existing.([]FileInfo); ok {
-				duplicate := false
-				for _, f := range existingSlice {
-					if f.Path == fi.Path {
-						duplicate = true
-						break
-					}
-				}
-				if !duplicate {
-					procFiles.TagMap.Store(tag, append(existingSlice, *fi))
-				}
-			}
-		}
-	}
-	return filesWithUUIDs
 }
 
 func processFile(filePath, root string, procFiles *ProcessedFiles) (*FileInfo, error) {
@@ -242,29 +230,4 @@ func extractPreview(orgContent []byte, maxLen int) string {
 		return contentAfterFirstLine[:cutAt] + "..."
 	}
 	return contentAfterFirstLine
-}
-
-func filesToSpans(files []FileInfo, numSpans int) func(func([]FileInfo) bool) {
-	return func(yield func([]FileInfo) bool) {
-		if len(files) == 0 {
-			return
-		}
-		if numSpans > len(files) {
-			numSpans = len(files)
-		}
-		spanSize := len(files) / numSpans
-
-		spansSent := 0
-		for i := 0; i < len(files); {
-			end := i + spanSize
-			if spansSent == numSpans-1 || end > len(files) {
-				end = len(files)
-			}
-			if !yield(files[i:end]) {
-				return
-			}
-			spansSent++
-			i = end
-		}
-	}
 }

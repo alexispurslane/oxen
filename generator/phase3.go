@@ -7,12 +7,18 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
+	"sync/atomic"
 )
 
 // GenerateTagPages creates a tag-*.html page for each unique tag, listing all files
 // bearing that tag. Writes output to ctx.DestDir. Returns a GenerationResult.
 func GenerateTagPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *template.Template) (result GenerationResult) {
 	publicDir := ctx.DestDir
+
+	var wg sync.WaitGroup
+	var tagPagesGenerated int64
+	var errors int64
 
 	procFiles.TagMap.Range(func(key, value any) bool {
 		tag, ok := key.(string)
@@ -26,38 +32,48 @@ func GenerateTagPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templat
 			return true
 		}
 
-		outputPath := filepath.Join(publicDir, "tag-"+tag+".html")
+		wg.Add(1)
+		go func(tag string, files []FileInfo) {
+			defer wg.Done()
 
-		if !ctx.ForceRebuild {
-			if htmlInfo, err := os.Stat(outputPath); err == nil {
-				if !ctx.TmplModTime.After(htmlInfo.ModTime()) {
-					return true
+			outputPath := filepath.Join(publicDir, "tag-"+tag+".html")
+
+			if !ctx.ForceRebuild {
+				if htmlInfo, err := os.Stat(outputPath); err == nil {
+					if !ctx.TmplModTime.After(htmlInfo.ModTime()) {
+						return
+					}
 				}
 			}
-		}
 
-		tagData := TagPageData{
-			Title:    tag,
-			Files:    files,
-			SiteName: ctx.SiteName,
-		}
+			tagData := TagPageData{
+				Title:    tag,
+				Files:    files,
+				SiteName: ctx.SiteName,
+			}
 
-		var outputBuf bytes.Buffer
-		if err := tmpl.ExecuteTemplate(&outputBuf, "tag-page-template.html", tagData); err != nil {
-			log.Printf("Failed to execute tag template for %s: %v", tag, err)
-			result.Errors++
-			return true
-		}
+			var outputBuf bytes.Buffer
+			if err := tmpl.ExecuteTemplate(&outputBuf, "tag-page-template.html", tagData); err != nil {
+				log.Printf("Failed to execute tag template for %s: %v", tag, err)
+				atomic.AddInt64(&errors, 1)
+				return
+			}
 
-		if err := os.WriteFile(outputPath, outputBuf.Bytes(), 0644); err != nil {
-			log.Printf("Failed to write tag page %s: %v", outputPath, err)
-			result.Errors++
-		} else {
-			result.TagPagesGenerated++
-		}
+			if err := os.WriteFile(outputPath, outputBuf.Bytes(), 0644); err != nil {
+				log.Printf("Failed to write tag page %s: %v", outputPath, err)
+				atomic.AddInt64(&errors, 1)
+			} else {
+				atomic.AddInt64(&tagPagesGenerated, 1)
+			}
+		}(tag, files)
 
 		return true
 	})
+
+	wg.Wait()
+
+	result.TagPagesGenerated = int(tagPagesGenerated)
+	result.Errors = int(errors)
 	return
 }
 

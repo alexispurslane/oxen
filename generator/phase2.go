@@ -118,27 +118,21 @@ func GenerateHtmlPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templa
 	})
 
 	var wg sync.WaitGroup
-	numWorkers := min(ctx.Workers, len(procFiles.Files))
-	fileQueue := make(chan FileInfo, numWorkers*2)
 	var filesGenerated int64
 	var errors int64
 
-	for range numWorkers {
-		wg.Go(func() {
-			for fi := range fileQueue {
-				if err := generateHTML(fi, ctx, keywords, replacements, tmpl); err != nil {
-					atomic.AddInt64(&errors, 1)
-				} else {
-					atomic.AddInt64(&filesGenerated, 1)
-				}
+	for _, fi := range procFiles.Files {
+		wg.Add(1)
+		go func(fi FileInfo) {
+			defer wg.Done()
+			if err := generateHTML(fi, ctx, keywords, replacements, tmpl); err != nil {
+				atomic.AddInt64(&errors, 1)
+			} else {
+				atomic.AddInt64(&filesGenerated, 1)
 			}
-		})
+		}(fi)
 	}
 
-	for _, fi := range procFiles.Files {
-		fileQueue <- fi
-	}
-	close(fileQueue)
 	wg.Wait()
 
 	return GenerationResult{

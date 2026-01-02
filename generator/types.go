@@ -13,7 +13,6 @@ import (
 type BuildContext struct {
 	Root         string
 	DestDir      string
-	Workers      int
 	ForceRebuild bool
 	TmplModTime  time.Time
 	SiteName     string
