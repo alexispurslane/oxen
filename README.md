@@ -2,7 +2,7 @@
 
 *A simple, extremely fast, standalone org-mode static site generator built for hypertext enthusiasts and designed to last*
 
-Think of it as a much simpler alternative to Hugo or Jekyll, or even Zola --- designed specifically for those who live and breathe Emacs org-mode, but find `org-publish` too slow, or not portable enough (for instance, running headless in a CI system).
+Think of it as a much simpler alternative to Hugo or Jekyll, or even Zola — designed specifically for those who live and breathe Emacs org-mode, but find `org-publish` too slow, or not portable enough (for instance, running headless in a CI system).
 
 What makes Oxen different: 
 
@@ -10,7 +10,7 @@ What makes Oxen different:
 2. Compiles to a single, small, completely standalone binary (not even a dependency on libc!) which is trivially cross-compiled, making setup and installation a cinch, even on devices where you don't have the ability to install packages or compile things directly.
 3. Built with completely vendored dependencies and no external build dependencies (e.g. C libraries): Oxen should be around for the long haul, because if you're using it --- as I am --- as your main way of expressing yourself to the world, then you need to be able to rely on it; vendored dependencies mean that even if I stop maintaining it, it will continue to work, since libraries and runtimes won't shift out from under it.
 4. An extremely permissive license: licensed under the Unlicense, you can be confident that there are no restrictions on how you use Oxen for your own personal websites and content, as it should be. It's truly yours to do whatever you want with.
-5. Support for `org-mode`'s global ID system: other static site generators might be able to parse org syntax, but they have no concept of the `:ID:` properties that org-mode uses for filesystem-location invariant cross-referencing. When you build a site with Oxen, those UUIDs get resolved—the lookup-id command can tell you exactly which file contains a given ID, making it possible to maintain hypertext networks that survive the movement of sections between files, the renaming of sections, or file moves and renames.
+5. Support for `org-mode`'s global ID system: other static site generators might be able to parse org syntax, but they have no concept of the `:ID:` properties that org-mode uses for filesystem-location invariant cross-referencing. When you build a site with Oxen, those UUIDs get resolved — the lookup-id command can tell you exactly which file contains a given ID, making it possible to maintain hypertext networks that survive the movement of sections between files, the renaming of sections, or file moves and renames.
 6. Performance: a full from-scratch rebuild of a 140-file, 700-UUID, 700,000-word project takes about 500 milliseconds. When you combine that performance with watch mode and the built-in dev server with live reload, you get an instant feedback loop for writing and editing. Save a file, and within half a second at most (it also has incremental builds) your browser refreshes with the changes.
 7. An aspiration to be **finished software**: Oxen, at some point soon, should be done with a capital-D. There are only so many features you need in an SSG for org-mode second brains, really!
 
@@ -90,7 +90,7 @@ First, it walks through your source directory and finds all the `.org` files. Th
 
 Next, Oxen loads the HTML templates used to render pages. It looks for template files in your source directory's `templates` subdirectory, or falls back to embedded defaults. If your templates are newer than the last build, Oxen knows to regenerate pages.
 
-The core of the build is converting each org-mode file to HTML. Oxen uses the excellent `go-org` library to parse org syntax and render it as semantic HTML. It then wraps this content in a template that includes your site navigation, footer, and styling. Each page gets the full treatment—titles, tags, and all the content you'd expect. This is also when org `id:` links are resolved, prior to HTML generation.
+The core of the build is converting each org-mode file to HTML. Oxen uses the excellent `go-org` library to parse org syntax and render it as semantic HTML. It then wraps this content in a template that includes your site navigation, footer, and styling. Each page gets the full treatment — titles, tags, and all the content you'd expect. This is also when org `id:` links are resolved, prior to HTML generation.
 
 Once all the individual pages are generated, Oxen creates tag pages. Each unique tag gets its own page listing all the files tagged with it, sorted by modification time. This makes it easy to discover related content across your site.
 
@@ -102,7 +102,7 @@ Org-mode has built-in support for UUIDs as global identifiers for entries throug
 
 This approach is particularly useful if you practice Zettelkasten, take a classic hypertext perspective à la Ted Nelson, or simply prefer an information architecture that doesn't rely on rigid file hierarchies. Emacs provides functions like `org-id-get-create` to generate IDs and `org-id-goto` to navigate to them.
 
-Most static site generators—even those that can parse org-mode—completely ignore this feature. They treat IDs as just another property and provide no way to resolve them. Oxen is different: it builds an in-memory index of all IDs and their locations, then gives you a command to look them up:
+Most static site generators — even those that can parse org-mode — completely ignore this feature. They treat IDs as just another property and provide no way to resolve them. Oxen is different: it builds an in-memory index of all IDs and their locations, then gives you a command to look them up:
 
 ```
 ./oxen lookup-id /path/to/your/files 550e8400-e29b-41d4-a716-446655440000
