@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/anknown/ahocorasick"
+	goahocorasick "github.com/anknown/ahocorasick"
 	"github.com/niklasfasching/go-org/org"
 )
 
@@ -184,6 +184,7 @@ func generateHTML(fi FileInfo, ctx BuildContext, keywords []string, targetPaths 
 	pageData := PageData{
 		FileInfo: fi,
 		Content:  template.HTML(htmlContent),
+		SiteName: ctx.SiteName,
 	}
 
 	var outputBuf bytes.Buffer

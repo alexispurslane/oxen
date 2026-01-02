@@ -14,7 +14,7 @@ import (
 	"oxen/server"
 )
 
-func buildSite(root string, workers int, forceRebuild bool, destDir string) error {
+func buildSite(root string, workers int, forceRebuild bool, destDir string, siteName string) error {
 	absDestDir, err := filepath.Abs(destDir)
 	if err != nil {
 		return fmt.Errorf("error getting absolute path for destDir: %w", err)
@@ -45,6 +45,7 @@ func buildSite(root string, workers int, forceRebuild bool, destDir string) erro
 		DestDir:      absDestDir,
 		Workers:      workers,
 		ForceRebuild: forceRebuild,
+		SiteName:     siteName,
 	}
 
 	startTime := time.Now()
@@ -72,7 +73,7 @@ func buildSite(root string, workers int, forceRebuild bool, destDir string) erro
 	return nil
 }
 
-func runWatchMode(root string, workers int, forceRebuild bool, destDir string) error {
+func runWatchMode(root string, workers int, forceRebuild bool, destDir string, siteName string) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("failed to create watcher: %w", err)
@@ -81,7 +82,7 @@ func runWatchMode(root string, workers int, forceRebuild bool, destDir string) e
 
 	// Run initial build
 	fmt.Println("Starting initial build...")
-	if err := buildSite(root, workers, forceRebuild, destDir); err != nil {
+	if err := buildSite(root, workers, forceRebuild, destDir, siteName); err != nil {
 		log.Printf("Initial build failed: %v", err)
 	}
 
@@ -182,7 +183,7 @@ func runWatchMode(root string, workers int, forceRebuild bool, destDir string) e
 		}
 
 		fmt.Println("\nChanges detected, rebuilding...")
-		if err := buildSite(root, workers, forceRebuild, destDir); err != nil {
+		if err := buildSite(root, workers, forceRebuild, destDir, siteName); err != nil {
 			log.Printf("Build failed: %v", err)
 		}
 		fmt.Printf("\nWatching %s for changes... (Press Ctrl+C to stop)\n", absPath)
@@ -190,13 +191,14 @@ func runWatchMode(root string, workers int, forceRebuild bool, destDir string) e
 }
 
 var (
-	dir     string
-	force   bool
-	watch   bool
-	workers int
-	port    int
-	dest    string
-	srv     *server.Server
+	dir      string
+	force    bool
+	watch    bool
+	workers  int
+	port     int
+	dest     string
+	siteName string
+	srv      *server.Server
 )
 
 func main() {
@@ -208,11 +210,11 @@ func main() {
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if watch {
-				if err := runWatchMode(args[0], workers, force, dest); err != nil {
+				if err := runWatchMode(args[0], workers, force, dest, siteName); err != nil {
 					log.Fatalf("Watch mode failed: %v", err)
 				}
 			} else {
-				if err := buildSite(args[0], workers, force, dest); err != nil {
+				if err := buildSite(args[0], workers, force, dest, siteName); err != nil {
 					log.Fatalf("Build failed: %v", err)
 				}
 			}
@@ -232,11 +234,11 @@ func main() {
 			}()
 
 			if watch {
-				if err := runWatchMode(args[0], workers, force, dest); err != nil {
+				if err := runWatchMode(args[0], workers, force, dest, siteName); err != nil {
 					log.Fatalf("Watch mode failed: %v", err)
 				}
 			} else {
-				if err := buildSite(args[0], workers, force, dest); err != nil {
+				if err := buildSite(args[0], workers, force, dest, siteName); err != nil {
 					log.Fatalf("Build failed: %v", err)
 				}
 				fmt.Printf("\nServer running at http://localhost:%d\n", port)
@@ -269,12 +271,14 @@ func main() {
 	buildCmd.Flags().BoolVarP(&watch, "watch", "w", false, "watch for changes and rebuild")
 	buildCmd.Flags().IntVarP(&workers, "workers", "j", 8, "number of concurrent workers")
 	buildCmd.Flags().StringVar(&dest, "dest", "public", "output directory")
+	buildCmd.Flags().StringVar(&siteName, "site-name", "Neon Vagabond", "site name")
 
 	serveCmd.Flags().BoolVarP(&force, "force", "f", false, "force rebuild all files")
 	serveCmd.Flags().BoolVarP(&watch, "watch", "w", false, "watch for changes and rebuild")
 	serveCmd.Flags().IntVarP(&workers, "workers", "j", 8, "number of concurrent workers")
 	serveCmd.Flags().IntVarP(&port, "port", "p", 8080, "port to serve on")
 	serveCmd.Flags().StringVar(&dest, "dest", "public", "output directory")
+	serveCmd.Flags().StringVar(&siteName, "site-name", "Neon Vagabond", "site name")
 
 	lookupCmd.Flags().IntVarP(&workers, "workers", "j", 8, "number of concurrent workers")
 

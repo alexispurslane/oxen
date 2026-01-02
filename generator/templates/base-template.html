@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{block "title" .}}Neon Vagabond{{end}}</title>
+    <title>{{block "title" .}}{{.SiteName}}{{end}}</title>
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <nav>
     <ul>
-      <li><strong>Neon Vagabond</strong></li>
+      <li><strong>{{.SiteName}}</strong></li>
       <li><a href="/index.html">Sitemap</a></li>
       <li><a href="/theindex.html">Index</a></li>
       <li><a href="/bio.html">About the Author</a></li>
@@ -21,7 +21,7 @@
   <main>
     {{block "header" .}}
     <header>
-      <h1>Neon Vagabond</h1>
+      <h1>{{.SiteName}}</h1>
     </header>
     {{end}}
 

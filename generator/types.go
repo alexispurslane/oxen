@@ -16,6 +16,7 @@ type BuildContext struct {
 	Workers      int
 	ForceRebuild bool
 	TmplModTime  time.Time
+	SiteName     string
 }
 
 type ProcessedFiles struct {
@@ -51,12 +52,14 @@ type FileInfo struct {
 
 type PageData struct {
 	FileInfo
-	Content template.HTML
+	Content  template.HTML
+	SiteName string
 }
 
 type TagPageData struct {
-	Title string
-	Files []FileInfo
+	Title    string
+	Files    []FileInfo
+	SiteName string
 }
 
 type TagInfo struct {
@@ -68,6 +71,7 @@ type IndexPageData struct {
 	RecentFiles []FileInfo
 	Tags        []TagInfo
 	Content     template.HTML
+	SiteName    string
 }
 
 type GenerationResult struct {

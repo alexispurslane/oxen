@@ -37,8 +37,9 @@ func GenerateTagPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templat
 		}
 
 		tagData := TagPageData{
-			Title: tag,
-			Files: files,
+			Title:    tag,
+			Files:    files,
+			SiteName: ctx.SiteName,
 		}
 
 		var outputBuf bytes.Buffer
@@ -123,6 +124,7 @@ func GenerateIndexPage(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templa
 		RecentFiles: recentFiles,
 		Tags:        tags,
 		Content:     preambleContent,
+		SiteName:    ctx.SiteName,
 	}
 
 	var outputBuf bytes.Buffer
