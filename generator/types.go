@@ -8,6 +8,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 type BuildContext struct {
