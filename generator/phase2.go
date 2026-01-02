@@ -12,8 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/anknown/ahocorasick"
 	"github.com/niklasfasching/go-org/org"
-	goahocorasick "oxen/internal/ahocorasick"
 )
 
 // SetupTemplates loads and parses HTML templates from the templates directory
