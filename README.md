@@ -1,7 +1,8 @@
 # Oxen
-## A simple, extremely fast, standalone org-mode static site generator built for hypertext enthusiasts and designed to last
 
-Oxen is a static site generator for hypertext enthsiasts. Think of it as a much simpler alternative to Hugo or Jekyll, designed specifically for those who live and breathe Emacs org-mode, but find `org-publish` too slow, or not portable enough (for instance, running headless in a CI system).
+*A simple, extremely fast, standalone org-mode static site generator built for hypertext enthusiasts and designed to last*
+
+Think of it as a much simpler alternative to Hugo or Jekyll, or even Zola --- designed specifically for those who live and breathe Emacs org-mode, but find `org-publish` too slow, or not portable enough (for instance, running headless in a CI system).
 
 What makes Oxen different: 
 
