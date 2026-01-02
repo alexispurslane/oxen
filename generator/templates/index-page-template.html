@@ -1,0 +1,40 @@
+{{define "title"}}Neon Vagabond - Sitemap{{end}}
+
+{{define "header"}}
+<header>
+  <h1>Neon Vagabond</h1>
+</header>
+{{end}}
+
+{{define "content"}}
+<article>
+  <section>
+    {{.Content}}
+  </section>
+  <section>
+    <h2>Recent Updates</h2>
+    <ul class="file-list">
+      {{range .RecentFiles}}
+      <li>
+        <a href="/{{.Path | pathNoExt}}.html">{{.Title}}</a>
+        <br><small>{{.Preview}}</small>
+      </li>
+      {{end}}
+    </ul>
+  </section>
+
+  <section>
+    <h2>Tags</h2>
+    <ul class="tag-list">
+      {{range .Tags}}
+      <li>
+        <a href="tag-{{.Name}}.html">{{.Name}}</a>
+        <span>({{.Count}} files)</span>
+      </li>
+      {{end}}
+    </ul>
+  </section>
+</article>
+{{end}}
+
+{{template "base-template.html" .}}
