@@ -1,8 +1,8 @@
 # Oxen
 
-*A simple, extremely fast, standalone org-mode static site generator built for hypertext enthusiasts and designed to last*
+*A simple, fast, standalone binary org-mode static site generator, built for hypertext enthusiasts and designed to last*
 
-Think of it as a much simpler alternative to Hugo or Jekyll, or even Zola — designed specifically for those who live and breathe Emacs org-mode, but find `org-publish` too slow, or not portable enough (for instance, running headless in a CI system).
+Think of it as a much simpler alternative to Hugo or Jekyll, or even Zola — designed specifically for those who live and breathe Emacs org-mode, but find `org-publish` too slow, or not portable enough (for instance, running headless in a CI system or in a systemd unit on your immutable core server).
 
 What makes Oxen different: 
 
