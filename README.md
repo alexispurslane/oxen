@@ -11,11 +11,11 @@ What makes Oxen different:
 3. **Built to Last**: Built with completely vendored dependencies and no external build dependencies (e.g. C libraries): Oxen should be around for the long haul, because if you're using it — as I am — as your main way of expressing yourself to the world, then you need to be able to rely on it; vendored dependencies mean that even if I stop maintaining it, it will continue to work, since libraries and runtimes won't shift out from under it.
 4. **Permissive License**: Licensed under the Unlicense, you can be confident that there are no restrictions on how you use Oxen for your own personal websites and content, as it should be. It's truly yours to do whatever you want with.
 
-5. **Support for `org-mode`'s global ID system**: Other static site generators might be able to parse org syntax, but they have no concept of the `:ID:` properties that org-mode uses for filesystem-location invariant cross-referencing. When you build a site with Oxen, those UUIDs get resolved — the lookup-id command can tell you exactly which file contains a given ID, making it possible to maintain hypertext networks that survive the movement of sections between files, the renaming of sections, or file moves and renames.
+5. **Support for `org-mode`'s global ID system**: Other static site generators might be able to parse org syntax, but they have no concept of the `:ID:` properties that org-mode uses for true [Ted Nelson-esque](https://hyperland.com/TedCompOneLiners) location and name invariant cross-referencing of whole files or portions of them. When you build a site with Oxen, those UUIDs are actually understood, building an index of where they are defined and then resolving them before HTML export, making it possible to maintain hypertext networks that survive the movement and renaming of files or even sections within those files.
 
 6. **Near-Instant Feedback**: a full from-scratch rebuild of a 140-file, 700-UUID, 700,000-word project takes about 500 milliseconds. When you combine that performance with watch mode and the built-in dev server with live reload, you get an instant feedback loop for writing and editing. Save a file, and within half a second at most (it also has incremental builds) your browser refreshes with the changes.
 
-7. An aspiration to be **Finished Software**: Oxen, at some point soon, should be done with a capital-D. There are only so many features you need in an SSG for org-mode second brains, really!
+7. An aspiration to be **[Finished Software](https://josem.co/the-beauty-of-finished-software/)**: Oxen, at some point soon, should be done with a capital-D. There are only so many features you need in an SSG for org-mode second brains, really!
 
 ## What it does
 
