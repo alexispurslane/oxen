@@ -118,11 +118,12 @@ func GenerateHtmlPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templa
 	})
 
 	var wg sync.WaitGroup
-	fileQueue := make(chan FileInfo, ctx.Workers*2)
+	numWorkers := min(ctx.Workers, len(procFiles.Files))
+	fileQueue := make(chan FileInfo, numWorkers*2)
 	var filesGenerated int64
 	var errors int64
 
-	for range ctx.Workers {
+	for range numWorkers {
 		wg.Go(func() {
 			for fi := range fileQueue {
 				if err := generateHTML(fi, ctx, keywords, replacements, tmpl); err != nil {

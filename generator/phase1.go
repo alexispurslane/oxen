@@ -15,9 +15,9 @@ import (
 // modification times, and UUIDs. Returns a ProcessedFiles
 // containing all discovered files along with populated UuidMap
 // and TagMap for cross-reference lookups, plus a GenerationResult.
-func GetAndProcessOrgFiles(absPath string, workers int) (*ProcessedFiles, GenerationResult) {
-	files := collectOrgFiles(absPath)
-	numWorkers := min(workers, len(files))
+func GetAndProcessOrgFiles(ctx BuildContext) (*ProcessedFiles, GenerationResult) {
+	files := collectOrgFiles(ctx.Root)
+	numWorkers := min(ctx.Workers, len(files))
 
 	procFiles := &ProcessedFiles{
 		Files:   files,
@@ -31,7 +31,7 @@ func GetAndProcessOrgFiles(absPath string, workers int) (*ProcessedFiles, Genera
 		wg.Add(1)
 		go func(chunk []FileInfo) {
 			defer wg.Done()
-			n := processSpan(chunk, absPath, procFiles)
+			n := processSpan(chunk, ctx.Root, procFiles)
 			atomic.AddInt64(&filesWithUUIDs, n)
 		}(chunk)
 	}

@@ -43,13 +43,13 @@ func buildSite(root string, workers int, forceRebuild bool, destDir string, site
 	ctx := generator.BuildContext{
 		Root:         absPath,
 		DestDir:      absDestDir,
-		Workers:      workers,
+		Workers:      max(1, workers),
 		ForceRebuild: forceRebuild,
 		SiteName:     siteName,
 	}
 
 	startTime := time.Now()
-	procFiles, phase1Result := generator.GetAndProcessOrgFiles(absPath, workers)
+	procFiles, phase1Result := generator.GetAndProcessOrgFiles(ctx)
 
 	pageTmpl, tagTmpl, indexTmpl, tmplModTime, err := generator.SetupTemplates(absPath)
 	if err != nil {
@@ -257,7 +257,11 @@ func main() {
 				log.Fatalf("Error getting absolute path: %v", err)
 			}
 
-			procFiles, _ := generator.GetAndProcessOrgFiles(absPath, workers)
+			ctx := generator.BuildContext{
+				Root:    absPath,
+				Workers: workers,
+			}
+			procFiles, _ := generator.GetAndProcessOrgFiles(ctx)
 
 			if path, found := procFiles.UuidMap.Load("id:" + args[1]); found {
 				fmt.Printf("ID %s found in: %s\n", args[1], path.(string))
