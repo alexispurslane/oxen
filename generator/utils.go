@@ -1,15 +1,5 @@
 package generator
 
-// Generator Package Structure:
-//
-//   - generator.go      - Main entry point and various utilities
-//   - types.go          - Type definitions, regex patterns, and embedded templates
-//   - phase1.go         - File discovery, parsing, and metadata extraction
-//   - phase2.go         - HTML page generation from org-mode files
-//   - phase3.go         - Tag pages, index page, and static asset handling
-//
-// For full documentation, see github.com/niklasfasching/go-org
-
 import (
 	"os"
 	"strings"
@@ -28,8 +18,16 @@ func extractUUIDs(data []byte) []string {
 	var uuids []string
 
 	for i := 0; i < len(s); {
-		idx := strings.Index(s[i:], ":ID:")
-		if idx == -1 {
+		// Search for :id: or :ID: case-insensitively
+		idx := -1
+		upperIdx := strings.Index(s[i:], ":ID:")
+		lowerIdx := strings.Index(s[i:], ":id:")
+
+		if upperIdx != -1 && (lowerIdx == -1 || upperIdx < lowerIdx) {
+			idx = upperIdx
+		} else if lowerIdx != -1 {
+			idx = lowerIdx
+		} else {
 			break
 		}
 

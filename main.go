@@ -48,7 +48,7 @@ func buildSite(root string, forceRebuild bool, destDir string, siteName string) 
 	}
 
 	startTime := time.Now()
-	procFiles, phase1Result := generator.GetAndProcessOrgFiles(ctx)
+	procFiles, phase1Result := generator.FindAndProcessOrgFiles(ctx)
 
 	pageTmpl, tagTmpl, indexTmpl, tmplModTime, err := generator.SetupTemplates(absPath)
 	if err != nil {
@@ -275,7 +275,7 @@ func main() {
 			ctx := generator.BuildContext{
 				Root: absPath,
 			}
-			procFiles, _ := generator.GetAndProcessOrgFiles(ctx)
+			procFiles, _ := generator.FindAndProcessOrgFiles(ctx)
 
 			if path, found := procFiles.UuidMap.Load("id:" + args[1]); found {
 				fmt.Printf("ID %s found in: %s\n", args[1], path.(string))

@@ -10,12 +10,12 @@ import (
 	"sync/atomic"
 )
 
-// GetAndProcessOrgFiles walks absPath discovering .org files,
+// FindAndProcessOrgFiles walks absPath discovering .org files,
 // then parses each to extract titles, tags, previews, last
 // modification times, and UUIDs. Returns a ProcessedFiles
 // containing all discovered files along with populated UuidMap
 // and TagMap for cross-reference lookups, plus a GenerationResult.
-func GetAndProcessOrgFiles(ctx BuildContext) (*ProcessedFiles, GenerationResult) {
+func FindAndProcessOrgFiles(ctx BuildContext) (*ProcessedFiles, GenerationResult) {
 	slog.Debug("Starting Phase 1: collecting and processing org files", "root", ctx.Root)
 	files := collectOrgFiles(ctx.Root)
 	slog.Debug("Collected org files", "count", len(files))

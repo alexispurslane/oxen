@@ -30,7 +30,7 @@ var (
 	reDrawers         = regexp.MustCompile(`(?m)^\s*:PROPERTIES:[\s\S]*?:END:(?:\s*\n|\s*$)`)
 	reOrgKeywords     = regexp.MustCompile(`(?m)^\s*#\+\S+.*$`)
 	reDrawerProps     = regexp.MustCompile(`(?m)^\s*:\S+:\s*$`)
-	reBlocks          = regexp.MustCompile(`(?m)^\s*#\+begin_\S+.*?(?:^\s*#\+end_\S+.*?$|\z)`)
+	reBlocks          = regexp.MustCompile(`(?m)^\s*#\+begin_\S+[\s\S]*?^\s*#\+end_\S+`)
 	reIncompleteBlock = regexp.MustCompile(`^\s*#\+(?:begin|end)_\S+`)
 	reLinkDesc        = regexp.MustCompile(`\[\[.*?\]\[([^\]]*)\]\]`)
 	reLinkFile        = regexp.MustCompile(`\[\[file:([^\]]+)\]\]`)

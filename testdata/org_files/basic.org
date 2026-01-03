@@ -1,0 +1,11 @@
+#+title: Basic Test Document
+
+This is a basic test document with no special features.
+
+* Section 1
+
+Some content in section 1.
+
+* Section 2  :work:project:
+
+Content with tags.

@@ -231,6 +231,9 @@ func convertOrgToHTML(orgContent []byte, filePath string) (string, error) {
 	return doc.Write(writer)
 }
 
+// replaceUUIDLinks finds id:uuid links in org-mode syntax and replaces them with file:path.html links
+// It converts [[id:uuid][text]] to [[file:path.html][text]] format
+// The org-mode parser then converts this to <a href="path.html">text</a> HTML
 func replaceUUIDLinks(data []byte, keywords []string, targetPaths []string, currentFilePath string) []byte {
 	if len(keywords) == 0 || len(targetPaths) != len(keywords) {
 		slog.Debug("Skipping UUID link replacement: no keywords or mismatch", "keyword_count", len(keywords))

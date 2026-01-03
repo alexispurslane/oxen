@@ -1,0 +1,16 @@
+#+title: Document with UUIDs
+:PROPERTIES:
+:ID:       550e8400-e29b-41d4-a716-446655440000
+:END:
+
+This document has UUIDs and links to other documents.
+
+* Introduction
+
+Here's a [[id:550e8400-e29b-41d4-a716-446655440001][link to another document]].
+
+And here's a reference to [[id:550e8400-e29b-41d4-a716-446655440002][yet another document]].
+
+* Details  :database:backend:
+
+This section has multiple tags.
