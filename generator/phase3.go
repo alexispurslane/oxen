@@ -3,7 +3,7 @@ package generator
 import (
 	"bytes"
 	"html/template"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,6 +14,8 @@ import (
 // GenerateTagPages creates a tag-*.html page for each unique tag, listing all files
 // bearing that tag. Writes output to ctx.DestDir. Returns a GenerationResult.
 func GenerateTagPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *template.Template) (result GenerationResult) {
+	slog.Debug("Starting Phase 3a: generating tag pages")
+
 	publicDir := ctx.DestDir
 
 	var wg sync.WaitGroup
@@ -23,12 +25,12 @@ func GenerateTagPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templat
 	procFiles.TagMap.Range(func(key, value any) bool {
 		tag, ok := key.(string)
 		if !ok {
-			log.Printf("Warning: unexpected type in TagMap key: %T", key)
+			slog.Warn("Warning: unexpected type in TagMap key", "key", key)
 			return true
 		}
 		files, ok := value.([]FileInfo)
 		if !ok {
-			log.Printf("Warning: unexpected type in TagMap value for tag %s: %T", tag, value)
+			slog.Warn("Warning: unexpected type in TagMap value", "tag", tag, "value", value)
 			return true
 		}
 
@@ -54,15 +56,16 @@ func GenerateTagPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templat
 
 			var outputBuf bytes.Buffer
 			if err := tmpl.ExecuteTemplate(&outputBuf, "tag-page-template.html", tagData); err != nil {
-				log.Printf("Failed to execute tag template for %s: %v", tag, err)
+				slog.Warn("Failed to execute tag template", "tag", tag, "error", err)
 				atomic.AddInt64(&errors, 1)
 				return
 			}
 
 			if err := os.WriteFile(outputPath, outputBuf.Bytes(), 0644); err != nil {
-				log.Printf("Failed to write tag page %s: %v", outputPath, err)
+				slog.Warn("Failed to write tag page", "path", outputPath, "error", err)
 				atomic.AddInt64(&errors, 1)
 			} else {
+				slog.Debug("Generated tag page", "tag", tag, "path", outputPath, "file_count", len(files))
 				atomic.AddInt64(&tagPagesGenerated, 1)
 			}
 		}(tag, files)
@@ -72,6 +75,8 @@ func GenerateTagPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templat
 
 	wg.Wait()
 
+	slog.Debug("Phase 3a complete", "tag_pages_generated", tagPagesGenerated, "errors", errors)
+
 	result.TagPagesGenerated = int(tagPagesGenerated)
 	result.Errors = int(errors)
 	return
@@ -80,12 +85,15 @@ func GenerateTagPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templat
 // GenerateIndexPage builds the site index (index.html) displaying the five most recent
 // files, all tags with file counts, and the sitemap preamble content. Returns a GenerationResult.
 func GenerateIndexPage(procFiles *ProcessedFiles, ctx BuildContext, tmpl *template.Template) (result GenerationResult) {
+	slog.Debug("Starting Phase 3b: generating index page")
+
 	publicDir := ctx.DestDir
 	outputPath := filepath.Join(publicDir, "index.html")
 
 	if !ctx.ForceRebuild {
 		if htmlInfo, err := os.Stat(outputPath); err == nil {
 			if !ctx.TmplModTime.After(htmlInfo.ModTime()) {
+				slog.Debug("Skipping index page: cache valid")
 				result.FilesSkipped = 1
 				return
 			}
@@ -110,12 +118,12 @@ func GenerateIndexPage(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templa
 	procFiles.TagMap.Range(func(key, value any) bool {
 		tag, ok := key.(string)
 		if !ok {
-			log.Printf("Warning: unexpected type in TagMap key: %T", key)
+			slog.Warn("Warning: unexpected type in TagMap key", "key", key)
 			return true
 		}
 		files, ok := value.([]FileInfo)
 		if !ok {
-			log.Printf("Warning: unexpected type in TagMap value for tag %s: %T", tag, value)
+			slog.Warn("Warning: unexpected type in TagMap value", "tag", tag, "value", value)
 			return true
 		}
 		tags = append(tags, TagInfo{
@@ -145,16 +153,18 @@ func GenerateIndexPage(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templa
 
 	var outputBuf bytes.Buffer
 	if err := tmpl.ExecuteTemplate(&outputBuf, "index-page-template.html", indexData); err != nil {
-		log.Printf("Failed to execute index template: %v", err)
+		slog.Warn("Failed to execute index template", "error", err)
 		result.Errors = 1
 		return
 	}
 
 	if err := os.WriteFile(outputPath, outputBuf.Bytes(), 0644); err != nil {
-		log.Printf("Failed to write index page: %v", err)
+		slog.Warn("Failed to write index page", "error", err)
 		result.Errors = 1
 		return
 	}
+
+	slog.Debug("Phase 3b complete: generated index page", "path", outputPath, "recent_files", len(recentFiles), "tags", len(tags))
 
 	result.FilesGenerated = 1
 	return
@@ -163,21 +173,24 @@ func GenerateIndexPage(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templa
 // CopyStaticFiles copies static assets from the static directory to the output directory.
 // Returns a GenerationResult with counts of copied files and errors.
 func CopyStaticFiles(ctx BuildContext) (result GenerationResult) {
+	slog.Debug("Starting Phase 3c: copying static files")
+
 	staticDir := filepath.Join(ctx.Root, "static")
 	publicDir := ctx.DestDir
 
 	entries, err := os.ReadDir(staticDir)
 	if err != nil {
 		if os.IsNotExist(err) {
+			slog.Debug("No static directory found, skipping", "path", staticDir)
 			return
 		}
-		log.Printf("Error reading static directory: %v", err)
+		slog.Warn("Error reading static directory", "error", err)
 		result.Errors = 1
 		return
 	}
 
 	if err := os.MkdirAll(publicDir, 0755); err != nil {
-		log.Printf("Failed to create public directory: %v", err)
+		slog.Warn("Failed to create public directory", "error", err)
 		result.Errors = 1
 		return
 	}
@@ -191,11 +204,13 @@ func CopyStaticFiles(ctx BuildContext) (result GenerationResult) {
 		dstPath := filepath.Join(publicDir, entry.Name())
 
 		if err := copyFile(srcPath, dstPath); err != nil {
-			log.Printf("Failed to copy %s: %v", entry.Name(), err)
+			slog.Warn("Failed to copy file", "name", entry.Name(), "error", err)
 			result.Errors++
 		} else {
+			slog.Debug("Copied static file", "name", entry.Name())
 			result.StaticFilesCopied++
 		}
 	}
+	slog.Debug("Phase 3c complete", "files_copied", result.StaticFilesCopied, "errors", result.Errors)
 	return
 }

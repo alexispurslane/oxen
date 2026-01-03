@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/fatih/color"
 )
 
 type BuildContext struct {
@@ -115,26 +115,55 @@ func (r GenerationResult) PrintSummary(procFiles *ProcessedFiles) {
 		return true
 	})
 	sort.Slice(tags, func(i, j int) bool {
-		return tags[i].name < tags[j].name
+		return tags[i].count > tags[j].count
 	})
 
-	fmt.Printf("\n=== Generation Complete ===\n")
-	fmt.Printf("Total files scanned:    %d\n", r.TotalFilesScanned)
-	fmt.Printf("Files with UUIDs:       %d\n", r.FilesWithUUIDs)
-	fmt.Printf("Files generated:        %d\n", r.FilesGenerated)
-	fmt.Printf("Files skipped:          %d\n", r.FilesSkipped)
-	fmt.Printf("Tag pages generated:    %d\n", r.TagPagesGenerated)
-	fmt.Printf("Static files copied:    %d\n", r.StaticFilesCopied)
-	fmt.Printf("Tags (%d):              ", len(tags))
-	for i, tc := range tags {
-		if i > 0 {
-			fmt.Printf(", ")
-		}
-		fmt.Printf("%s (%d)", tc.name, tc.count)
+	pastelMagenta := color.RGB(255, 182, 193).SprintFunc()
+	pastelBlue := color.RGB(173, 216, 230).SprintFunc()
+	pastelGreen := color.RGB(152, 251, 152).SprintFunc()
+	pastelRed := color.RGB(255, 160, 160).SprintFunc()
+	pastelYellow := color.RGB(255, 255, 224).SprintFunc()
+
+	fmt.Printf("\n✨  %s  ✨\n\n", pastelMagenta("Generation Complete!"))
+	fmt.Printf("Total files scanned:  %s\n", pastelBlue(r.TotalFilesScanned))
+	fmt.Printf("Files with UUIDs:     %s\n", pastelBlue(r.FilesWithUUIDs))
+	fmt.Printf("Files generated:      %s\n", pastelGreen(r.FilesGenerated))
+	fmt.Printf("Files skipped:        %s\n", pastelBlue(r.FilesSkipped))
+	fmt.Printf("Tag pages generated:  %s\n", pastelGreen(r.TagPagesGenerated))
+	fmt.Printf("Static files copied:  %s\n", pastelGreen(r.StaticFilesCopied))
+
+	if r.Errors > 0 {
+		fmt.Printf("Errors:               %s\n", pastelRed(r.Errors))
+	} else {
+		fmt.Printf("Errors:               %s\n", pastelGreen(0))
 	}
-	fmt.Printf("\n")
-	fmt.Printf("Errors:                 %d\n", r.Errors)
-	fmt.Printf("Duration:               %v\n", duration.Round(time.Millisecond))
+
+	fmt.Printf("Duration:             %s\n", pastelYellow(duration.Round(time.Millisecond)))
+
+	if len(tags) > 0 {
+		pastelTagColors := []*color.Color{
+			color.RGB(255, 182, 193),
+			color.RGB(221, 160, 221),
+			color.RGB(173, 216, 230),
+			color.RGB(152, 251, 152),
+			color.RGB(255, 228, 181),
+			color.RGB(255, 255, 224),
+		}
+
+		fmt.Printf("\nTags (%d):\n", len(tags))
+		for i := 0; i < len(tags); i += 3 {
+			for j := 0; j < 3 && i+j < len(tags); j++ {
+				tc := tags[i+j]
+				hash := 0
+				for _, c := range tc.name {
+					hash = (hash*31 + int(c)) % len(pastelTagColors)
+				}
+				colorFunc := pastelTagColors[hash].SprintFunc()
+				fmt.Printf(" %s", colorFunc(fmt.Sprintf("%s (%d)", tc.name, tc.count)))
+			}
+			fmt.Println()
+		}
+	}
 }
 
 func (r *GenerationResult) SetStartTime(t time.Time) {

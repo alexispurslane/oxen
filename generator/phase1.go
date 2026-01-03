@@ -2,7 +2,7 @@ package generator
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +16,9 @@ import (
 // containing all discovered files along with populated UuidMap
 // and TagMap for cross-reference lookups, plus a GenerationResult.
 func GetAndProcessOrgFiles(ctx BuildContext) (*ProcessedFiles, GenerationResult) {
+	slog.Debug("Starting Phase 1: collecting and processing org files", "root", ctx.Root)
 	files := collectOrgFiles(ctx.Root)
+	slog.Debug("Collected org files", "count", len(files))
 
 	procFiles := &ProcessedFiles{
 		Files:   files,
@@ -32,7 +34,7 @@ func GetAndProcessOrgFiles(ctx BuildContext) (*ProcessedFiles, GenerationResult)
 			defer wg.Done()
 			fi, err := processFile(files[idx].Path, ctx.Root, procFiles)
 			if err != nil {
-				log.Printf("Error processing %s: %v", files[idx].Path, err)
+				slog.Error("Error processing file", "path", files[idx].Path, "error", err)
 				return
 			}
 			if fi == nil {
@@ -61,6 +63,8 @@ func GetAndProcessOrgFiles(ctx BuildContext) (*ProcessedFiles, GenerationResult)
 	}
 	wg.Wait()
 
+	slog.Debug("Phase 1 complete", "files_processed", len(files), "files_with_uuids", int(filesWithUUIDs))
+
 	return procFiles, GenerationResult{
 		TotalFilesScanned: len(files),
 		FilesWithUUIDs:    int(filesWithUUIDs),
@@ -68,6 +72,7 @@ func GetAndProcessOrgFiles(ctx BuildContext) (*ProcessedFiles, GenerationResult)
 }
 
 func collectOrgFiles(root string) []FileInfo {
+	slog.Debug("Scanning directory for .org files", "root", root)
 	var files []FileInfo
 	filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -76,13 +81,14 @@ func collectOrgFiles(root string) []FileInfo {
 		if !d.IsDir() && strings.HasSuffix(path, ".org") {
 			info, err := d.Info()
 			if err != nil {
-				log.Printf("Error getting info for %s: %v", path, err)
+				slog.Error("Error getting file info", "path", path, "error", err)
 				return nil
 			}
 			relPath := strings.TrimPrefix(path, root+string(filepath.Separator))
 			if relPath == path {
 				relPath = strings.TrimPrefix(path, root)
 			}
+			slog.Debug("Found .org file", "path", relPath, "mod_time", info.ModTime())
 			files = append(files, FileInfo{
 				Path:    relPath,
 				ModTime: info.ModTime(),
@@ -95,6 +101,8 @@ func collectOrgFiles(root string) []FileInfo {
 
 func processFile(filePath, root string, procFiles *ProcessedFiles) (*FileInfo, error) {
 	absPath := filepath.Join(root, filePath)
+	slog.Debug("Processing org file", "path", filePath)
+
 	file, err := os.Open(absPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
@@ -108,6 +116,7 @@ func processFile(filePath, root string, procFiles *ProcessedFiles) (*FileInfo, e
 
 	size := info.Size()
 	if size == 0 {
+		slog.Debug("Skipping empty file", "path", filePath)
 		return nil, nil
 	}
 
@@ -125,6 +134,13 @@ func processFile(filePath, root string, procFiles *ProcessedFiles) (*FileInfo, e
 		UUIDs:   extractUUIDs(data),
 	}
 
+	slog.Debug("Extracted file metadata",
+		"path", filePath,
+		"title", resultFI.Title,
+		"tags", resultFI.Tags,
+		"uuid_count", len(resultFI.UUIDs),
+		"uuids", resultFI.UUIDs)
+
 	for _, uuid := range resultFI.UUIDs {
 		procFiles.UuidMap.Store("id:"+uuid, filePath)
 	}
@@ -141,6 +157,7 @@ func extractTitle(orgContent []byte) string {
 		if strings.HasPrefix(strings.ToLower(trimmed), "#+title:") {
 			title := strings.TrimSpace(trimmed[8:])
 			if title != "" {
+				slog.Debug("Found title in #+title: directive", "title", title)
 				return title
 			}
 		} else if strings.HasPrefix(trimmed, "* ") && trimmed != "* " {
@@ -149,11 +166,13 @@ func extractTitle(orgContent []byte) string {
 				titlePart = strings.TrimSpace(titlePart[:spaceIdx])
 			}
 			if titlePart != "" {
+				slog.Debug("Found title in headline", "title", titlePart)
 				return titlePart
 			}
 		}
 	}
 
+	slog.Warn("No title found in org file")
 	return ""
 }
 
@@ -167,7 +186,7 @@ func extractTags(orgContent []byte) []string {
 		if strings.HasPrefix(trimmed, "* ") && trimmed != "* " {
 			firstSpace := strings.Index(trimmed, " :")
 			if firstSpace == -1 {
-				continue
+				break
 			}
 
 			tagStr := trimmed[firstSpace+1:]
@@ -181,6 +200,9 @@ func extractTags(orgContent []byte) []string {
 				if tag != "" {
 					tags = append(tags, tag)
 				}
+			}
+			if len(tags) > 0 {
+				slog.Debug("Extracted tags from headline", "tags", tags)
 			}
 			break
 		}

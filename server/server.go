@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -39,6 +40,7 @@ func (s *Server) NotifyReload() {
 }
 
 func (s *Server) HandleSSE(w http.ResponseWriter, r *http.Request) {
+	slog.Debug("New SSE client connected", "remote_addr", r.RemoteAddr)
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -51,16 +53,20 @@ func (s *Server) HandleSSE(w http.ResponseWriter, r *http.Request) {
 
 	<-client.done
 	s.clients.Delete(r.RemoteAddr)
+	slog.Debug("SSE client disconnected", "remote_addr", r.RemoteAddr)
 }
 
 func (s *Server) startReloadBroadcaster() {
 	for range s.reloadChan {
+		clientCount := 0
 		s.clients.Range(func(key, value any) bool {
 			client := value.(*sseClient)
 			client.writer.Write([]byte("data: reload\n\n"))
 			client.writer.(http.Flusher).Flush()
+			clientCount++
 			return true
 		})
+		slog.Debug("Broadcasted reload signal to clients", "client_count", clientCount)
 	}
 }
 
@@ -70,6 +76,7 @@ func (s *Server) Run() error {
 		return fmt.Errorf("error getting absolute path: %w", err)
 	}
 
+	slog.Info("Starting HTTP server", "address", fmt.Sprintf(":%d", s.Port), "dir", absDir)
 	go s.startReloadBroadcaster()
 
 	reloadScript := `<script>
@@ -84,12 +91,15 @@ if (typeof EventSource !== 'undefined') {
 		s.HandleSSE(w, r)
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		slog.Debug("HTTP request", "method", r.Method, "path", r.URL.Path, "remote_addr", r.RemoteAddr)
+
 		if strings.HasSuffix(r.URL.Path, "/") {
 			r.URL.Path += "index.html"
 		}
 
 		fullPath := filepath.Join(absDir, r.URL.Path)
 		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+			slog.Warn("File not found", "path", r.URL.Path, "remote_addr", r.RemoteAddr)
 			http.NotFound(w, r)
 			return
 		}
@@ -117,7 +127,7 @@ if (typeof EventSource !== 'undefined') {
 		Handler: mux,
 	}
 
-	fmt.Printf("Serving %s on http://localhost:%d\n", absDir, s.Port)
+	slog.Info("Server listening", "address", fmt.Sprintf("http://localhost:%d", s.Port), "dir", absDir)
 	return s.httpServer.ListenAndServe()
 }
 

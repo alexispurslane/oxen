@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,7 +82,7 @@ func runWatchMode(root string, forceRebuild bool, destDir string, siteName strin
 	// Run initial build
 	fmt.Println("Starting initial build...")
 	if err := buildSite(root, forceRebuild, destDir, siteName); err != nil {
-		log.Printf("Initial build failed: %v", err)
+		slog.Error("Initial build failed", "error", err)
 	}
 
 	absPath, err := filepath.Abs(root)
@@ -103,7 +103,7 @@ func runWatchMode(root string, forceRebuild bool, destDir string, siteName strin
 		}
 		if d.IsDir() && d.Name() != destDirName {
 			if err := watcher.Add(path); err != nil {
-				log.Printf("Warning: failed to watch directory %s: %v", path, err)
+				slog.Debug("Failed to watch directory", "path", path, "error", err)
 			}
 		}
 		return nil
@@ -112,9 +112,12 @@ func runWatchMode(root string, forceRebuild bool, destDir string, siteName strin
 		return fmt.Errorf("failed to walk directories: %w", err)
 	}
 
-	// Channel to signal rebuilds
-	rebuildChan := make(chan bool, 1)
-	hasPendingRebuild := false
+	// Channel to signal rebuilds with file count
+	rebuildChan := make(chan int, 1)
+
+	var changedFilesCount int
+	var rebuildCount int
+	var debounceTimer *time.Timer
 
 	// Process events in a goroutine
 	go func() {
@@ -139,28 +142,31 @@ func runWatchMode(root string, forceRebuild bool, destDir string, siteName strin
 				if event.Op&fsnotify.Create == fsnotify.Create {
 					if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
 						if err := watcher.Add(event.Name); err != nil {
-							log.Printf("Warning: failed to watch new directory %s: %v", event.Name, err)
+							slog.Debug("Failed to watch new directory", "path", event.Name, "error", err)
 						}
 					}
 				}
 
 				// Print watcher event for debugging
-				log.Printf("Watcher event: %v %s", event.Op, event.Name)
+				slog.Debug("Watcher event", "op", event.Op, "path", event.Name)
 
-				// Trigger rebuild
-				if !hasPendingRebuild {
-					hasPendingRebuild = true
-					select {
-					case rebuildChan <- true:
-					default:
-					}
+				// Increment counter and debounce rebuild
+				changedFilesCount++
+				if debounceTimer != nil {
+					debounceTimer.Stop()
 				}
+				debounceTimer = time.AfterFunc(100*time.Millisecond, func() {
+					rebuildCount++
+					rebuildChan <- changedFilesCount
+					changedFilesCount = 0
+					debounceTimer = nil
+				})
 
 			case err, ok := <-watcher.Errors:
 				if !ok {
 					return
 				}
-				log.Printf("Watcher error: %v", err)
+				slog.Error("Watcher error", "error", err)
 			}
 		}
 	}()
@@ -169,21 +175,17 @@ func runWatchMode(root string, forceRebuild bool, destDir string, siteName strin
 
 	// Main watch loop
 	for {
-		<-rebuildChan
-		hasPendingRebuild = false
+		numChanged := <-rebuildChan
 
-		// Debounce: wait a bit for more changes
-		time.Sleep(100 * time.Millisecond)
+		fmt.Printf("\nChanges detected (%d file%s changed) [Rebuild #%d], rebuilding...\n", numChanged, func() string {
+			if numChanged == 1 {
+				return ""
+			}
+			return "s"
+		}(), rebuildCount)
 
-		// Drain any additional rebuild signals
-		select {
-		case <-rebuildChan:
-		default:
-		}
-
-		fmt.Println("\nChanges detected, rebuilding...")
 		if err := buildSite(root, forceRebuild, destDir, siteName); err != nil {
-			log.Printf("Build failed: %v", err)
+			slog.Error("Build failed", "error", err)
 		}
 		fmt.Printf("\nWatching %s for changes... (Press Ctrl+C to stop)\n", absPath)
 	}
@@ -200,6 +202,16 @@ var (
 )
 
 func main() {
+	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelError,
+	})
+	if os.Getenv("OXEN_DEBUG") == "true" || os.Getenv("OXEN_DEBUG") == "1" {
+		handler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		})
+	}
+	slog.SetDefault(slog.New(handler))
+
 	var rootCmd = &cobra.Command{Use: "oxen"}
 
 	var buildCmd = &cobra.Command{
@@ -209,11 +221,13 @@ func main() {
 		Run: func(cmd *cobra.Command, args []string) {
 			if watch {
 				if err := runWatchMode(args[0], force, dest, siteName); err != nil {
-					log.Fatalf("Watch mode failed: %v", err)
+					slog.Error("Watch mode failed", "error", err)
+					os.Exit(1)
 				}
 			} else {
 				if err := buildSite(args[0], force, dest, siteName); err != nil {
-					log.Fatalf("Build failed: %v", err)
+					slog.Error("Build failed", "error", err)
+					os.Exit(1)
 				}
 			}
 		},
@@ -227,17 +241,19 @@ func main() {
 			srv = server.NewServer(dest, port)
 			go func() {
 				if err := srv.Run(); err != nil {
-					log.Printf("HTTP server error: %v", err)
+					slog.Error("HTTP server error", "error", err)
 				}
 			}()
 
 			if watch {
 				if err := runWatchMode(args[0], force, dest, siteName); err != nil {
-					log.Fatalf("Watch mode failed: %v", err)
+					slog.Error("Watch mode failed", "error", err)
+					os.Exit(1)
 				}
 			} else {
 				if err := buildSite(args[0], force, dest, siteName); err != nil {
-					log.Fatalf("Build failed: %v", err)
+					slog.Error("Build failed", "error", err)
+					os.Exit(1)
 				}
 				fmt.Printf("\nServer running at http://localhost:%d\n", port)
 				select {}
@@ -252,7 +268,8 @@ func main() {
 		Run: func(cmd *cobra.Command, args []string) {
 			absPath, err := filepath.Abs(args[0])
 			if err != nil {
-				log.Fatalf("Error getting absolute path: %v", err)
+				slog.Error("Error getting absolute path", "error", err)
+				os.Exit(1)
 			}
 
 			ctx := generator.BuildContext{

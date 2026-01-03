@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,6 +30,9 @@ func SetupTemplates(absPath string) (*template.Template, *template.Template, *te
 	useFS := true
 	if _, statErr := os.Stat(templatesDir); os.IsNotExist(statErr) {
 		useFS = false
+		slog.Debug("Using embedded templates", "reason", "templates directory not found")
+	} else {
+		slog.Debug("Using custom templates from directory", "path", templatesDir)
 	}
 
 	var pageTmpl, tagTmpl, indexTmpl *template.Template
@@ -100,6 +103,8 @@ func SetupTemplates(absPath string) (*template.Template, *template.Template, *te
 // to ctx.DestDir. Uses UUID map to replace internal links with proper file paths.
 // Returns a GenerationResult with counts of generated, skipped, and errored files.
 func GenerateHtmlPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *template.Template) GenerationResult {
+	slog.Debug("Starting Phase 2: generating HTML pages", "file_count", len(procFiles.Files))
+
 	var keywords []string
 	var replacements []string
 
@@ -109,13 +114,15 @@ func GenerateHtmlPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templa
 				keywords = append(keywords, k)
 				replacements = append(replacements, v)
 			} else {
-				log.Printf("Warning: unexpected type in UuidMap value: %T", value)
+				slog.Warn("Warning: unexpected type in UuidMap value", "value", value)
 			}
 		} else {
-			log.Printf("Warning: unexpected type in UuidMap key: %T", key)
+			slog.Warn("Warning: unexpected type in UuidMap key", "key", key)
 		}
 		return true
 	})
+
+	slog.Debug("Built UUID lookup map", "uuid_count", len(keywords))
 
 	var wg sync.WaitGroup
 	var filesGenerated int64
@@ -135,6 +142,8 @@ func GenerateHtmlPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templa
 
 	wg.Wait()
 
+	slog.Debug("Phase 2 complete", "files_generated", filesGenerated, "errors", errors)
+
 	return GenerationResult{
 		FilesGenerated: int(filesGenerated),
 		Errors:         int(errors),
@@ -143,10 +152,12 @@ func GenerateHtmlPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templa
 
 func generateHTML(fi FileInfo, ctx BuildContext, keywords []string, targetPaths []string, tmpl *template.Template) error {
 	if fi.Path == "sitemap-preamble.org" {
+		slog.Debug("Skipping sitemap-preamble.org from HTML generation")
 		return nil
 	}
 
 	absPath := filepath.Join(ctx.Root, fi.Path)
+	slog.Debug("Generating HTML for file", "path", fi.Path)
 	publicDir := ctx.DestDir
 	htmlRelativePath := strings.TrimSuffix(fi.Path, ".org") + ".html"
 	outputPath := filepath.Join(publicDir, htmlRelativePath)
@@ -154,6 +165,7 @@ func generateHTML(fi FileInfo, ctx BuildContext, keywords []string, targetPaths 
 	if !ctx.ForceRebuild {
 		if htmlInfo, err := os.Stat(outputPath); err == nil {
 			if !fi.ModTime.After(htmlInfo.ModTime()) && !ctx.TmplModTime.After(htmlInfo.ModTime()) {
+				slog.Debug("Skipping file: cache valid", "path", fi.Path)
 				return nil
 			}
 		}
@@ -161,7 +173,7 @@ func generateHTML(fi FileInfo, ctx BuildContext, keywords []string, targetPaths 
 
 	data, err := os.ReadFile(absPath)
 	if err != nil {
-		log.Printf("Error reading %s: %v", fi.Path, err)
+		slog.Warn("Error reading file", "path", fi.Path, "error", err)
 		return err
 	}
 
@@ -169,7 +181,7 @@ func generateHTML(fi FileInfo, ctx BuildContext, keywords []string, targetPaths 
 
 	htmlContent, err := convertOrgToHTML(replacedData, fi.Path)
 	if err != nil {
-		log.Printf("Error converting %s to HTML: %v", fi.Path, err)
+		slog.Warn("Error converting to HTML", "path", fi.Path, "error", err)
 		return err
 	}
 
@@ -184,21 +196,22 @@ func generateHTML(fi FileInfo, ctx BuildContext, keywords []string, targetPaths 
 
 	var outputBuf bytes.Buffer
 	if err := tmpl.ExecuteTemplate(&outputBuf, "page-template.html", pageData); err != nil {
-		log.Printf("Error executing template for %s: %v", fi.Path, err)
+		slog.Warn("Error executing template", "path", fi.Path, "error", err)
 		return err
 	}
 
 	outputDir := filepath.Dir(outputPath)
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		log.Printf("Error creating directory for %s: %v", fi.Path, err)
+		slog.Warn("Error creating directory", "path", fi.Path, "error", err)
 		return err
 	}
 
 	if err := os.WriteFile(outputPath, outputBuf.Bytes(), 0644); err != nil {
-		log.Printf("Error writing %s: %v", fi.Path, err)
+		slog.Warn("Error writing file", "path", fi.Path, "error", err)
 		return err
 	}
 
+	slog.Debug("Wrote HTML file", "path", outputPath)
 	return nil
 }
 
@@ -220,6 +233,7 @@ func convertOrgToHTML(orgContent []byte, filePath string) (string, error) {
 
 func replaceUUIDLinks(data []byte, keywords []string, targetPaths []string, currentFilePath string) []byte {
 	if len(keywords) == 0 || len(targetPaths) != len(keywords) {
+		slog.Debug("Skipping UUID link replacement: no keywords or mismatch", "keyword_count", len(keywords))
 		return data
 	}
 
@@ -232,7 +246,7 @@ func replaceUUIDLinks(data []byte, keywords []string, targetPaths []string, curr
 
 	err := mach.Build(keywordRunes)
 	if err != nil {
-		log.Printf("Failed to build Aho-Corasick machine: %v", err)
+		slog.Warn("Failed to build Aho-Corasick machine", "error", err)
 		return data
 	}
 
@@ -240,8 +254,11 @@ func replaceUUIDLinks(data []byte, keywords []string, targetPaths []string, curr
 	terms := mach.MultiPatternSearch(content, false)
 
 	if len(terms) == 0 {
+		slog.Debug("No UUID links found to replace", "path", currentFilePath)
 		return data
 	}
+
+	slog.Debug("Found UUID links to replace", "path", currentFilePath, "match_count", len(terms))
 
 	targetPathMap := make(map[string]string)
 	for i, kw := range keywords {
