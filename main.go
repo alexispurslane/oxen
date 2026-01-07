@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -12,6 +13,17 @@ import (
 	"github.com/spf13/cobra"
 	"oxen/generator"
 	"oxen/server"
+)
+
+var (
+	srv *server.Server
+)
+
+const (
+	defaultPort     = 8080
+	defaultDest     = "public"
+	defaultSiteName = "Neon Vagabond"
+	watchDebounce   = 100 * time.Millisecond
 )
 
 func buildSite(root string, forceRebuild bool, destDir string, siteName string) error {
@@ -48,22 +60,23 @@ func buildSite(root string, forceRebuild bool, destDir string, siteName string) 
 	}
 
 	startTime := time.Now()
-	procFiles, phase1Result := generator.FindAndProcessOrgFiles(ctx)
 
-	pageTmpl, tagTmpl, indexTmpl, tmplModTime, err := generator.SetupTemplates(absPath)
-	if err != nil {
-		return err
-	}
-	ctx.TmplModTime = tmplModTime
-
-	result := phase1Result
-	result = result.Add(generator.GenerateHtmlPages(procFiles, ctx, pageTmpl))
-	result = result.Add(generator.GenerateTagPages(procFiles, ctx, tagTmpl))
-	result = result.Add(generator.GenerateIndexPage(procFiles, ctx, indexTmpl))
-	result = result.Add(generator.CopyStaticFiles(ctx))
+	_, result := generator.NewPipeline(ctx).
+		WithFullPhase(generator.FindAndProcessOrgFiles).
+		WithOutputOnlyPhase(func(procFiles *generator.ProcessedFiles, ctx generator.BuildContext) generator.GenerationResult {
+			pageTmpl, tagTmpl, indexTmpl, _, err := generator.SetupTemplates(absPath)
+			if err != nil {
+				return generator.GenerationResult{Errors: 1}
+			}
+			return generator.GenerateHtmlPages(procFiles, ctx, pageTmpl).Add(
+				generator.GenerateTagPages(procFiles, ctx, tagTmpl)).Add(
+				generator.GenerateIndexPage(procFiles, ctx, indexTmpl))
+		}).
+		WithOutputOnlyPhase(generator.CopyStaticFiles).
+		Execute()
 
 	result.SetStartTime(startTime)
-	result.PrintSummary(procFiles)
+	result.PrintSummary(nil)
 
 	if srv != nil {
 		srv.NotifyReload()
@@ -72,7 +85,7 @@ func buildSite(root string, forceRebuild bool, destDir string, siteName string) 
 	return nil
 }
 
-func runWatchMode(root string, forceRebuild bool, destDir string, siteName string) error {
+func runWatchMode(ctx context.Context, root string, forceRebuild bool, destDir string, siteName string) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("failed to create watcher: %w", err)
@@ -123,6 +136,8 @@ func runWatchMode(root string, forceRebuild bool, destDir string, siteName strin
 	go func() {
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case event, ok := <-watcher.Events:
 				if !ok {
 					return
@@ -155,7 +170,7 @@ func runWatchMode(root string, forceRebuild bool, destDir string, siteName strin
 				if debounceTimer != nil {
 					debounceTimer.Stop()
 				}
-				debounceTimer = time.AfterFunc(100*time.Millisecond, func() {
+				debounceTimer = time.AfterFunc(watchDebounce, func() {
 					rebuildCount++
 					rebuildChan <- changedFilesCount
 					changedFilesCount = 0
@@ -198,7 +213,6 @@ var (
 	port     int
 	dest     string
 	siteName string
-	srv      *server.Server
 )
 
 func main() {
@@ -220,7 +234,8 @@ func main() {
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if watch {
-				if err := runWatchMode(args[0], force, dest, siteName); err != nil {
+				ctx := context.Background()
+				if err := runWatchMode(ctx, args[0], force, dest, siteName); err != nil {
 					slog.Error("Watch mode failed", "error", err)
 					os.Exit(1)
 				}
@@ -246,7 +261,8 @@ func main() {
 			}()
 
 			if watch {
-				if err := runWatchMode(args[0], force, dest, siteName); err != nil {
+				ctx := context.Background()
+				if err := runWatchMode(ctx, args[0], force, dest, siteName); err != nil {
 					slog.Error("Watch mode failed", "error", err)
 					os.Exit(1)
 				}
@@ -275,7 +291,7 @@ func main() {
 			ctx := generator.BuildContext{
 				Root: absPath,
 			}
-			procFiles, _ := generator.FindAndProcessOrgFiles(ctx)
+			procFiles, _ := generator.FindAndProcessOrgFiles(nil, ctx)
 
 			if path, found := procFiles.UuidMap.Load("id:" + args[1]); found {
 				fmt.Printf("ID %s found in: %s\n", args[1], path.(string))
@@ -287,14 +303,14 @@ func main() {
 
 	buildCmd.Flags().BoolVarP(&force, "force", "f", false, "force rebuild all files")
 	buildCmd.Flags().BoolVarP(&watch, "watch", "w", false, "watch for changes and rebuild")
-	buildCmd.Flags().StringVar(&dest, "dest", "public", "output directory")
-	buildCmd.Flags().StringVar(&siteName, "site-name", "Neon Vagabond", "site name")
+	buildCmd.Flags().StringVar(&dest, "dest", defaultDest, "output directory")
+	buildCmd.Flags().StringVar(&siteName, "site-name", defaultSiteName, "site name")
 
 	serveCmd.Flags().BoolVarP(&force, "force", "f", false, "force rebuild all files")
 	serveCmd.Flags().BoolVarP(&watch, "watch", "w", false, "watch for changes and rebuild")
-	serveCmd.Flags().IntVarP(&port, "port", "p", 8080, "port to serve on")
-	serveCmd.Flags().StringVar(&dest, "dest", "public", "output directory")
-	serveCmd.Flags().StringVar(&siteName, "site-name", "Neon Vagabond", "site name")
+	serveCmd.Flags().IntVarP(&port, "port", "p", defaultPort, "port to serve on")
+	serveCmd.Flags().StringVar(&dest, "dest", defaultDest, "output directory")
+	serveCmd.Flags().StringVar(&siteName, "site-name", defaultSiteName, "site name")
 
 	rootCmd.AddCommand(buildCmd, serveCmd, lookupCmd)
 	if err := rootCmd.Execute(); err != nil {

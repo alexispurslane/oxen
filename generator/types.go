@@ -169,3 +169,47 @@ func (r GenerationResult) PrintSummary(procFiles *ProcessedFiles) {
 func (r *GenerationResult) SetStartTime(t time.Time) {
 	r.startTime = t
 }
+
+type Pipeline struct {
+	ctx       BuildContext
+	procFiles *ProcessedFiles
+	result    GenerationResult
+	phases    []func(*Pipeline) (*ProcessedFiles, GenerationResult)
+}
+
+func NewPipeline(ctx BuildContext) *Pipeline {
+	return &Pipeline{
+		ctx:    ctx,
+		phases: []func(*Pipeline) (*ProcessedFiles, GenerationResult){},
+		result: GenerationResult{},
+	}
+}
+
+// WithFullPhase adds a phase that processes and potentially modifies procFiles
+func (p *Pipeline) WithFullPhase(phase func(*ProcessedFiles, BuildContext) (*ProcessedFiles, GenerationResult)) *Pipeline {
+	p.phases = append(p.phases, func(pl *Pipeline) (*ProcessedFiles, GenerationResult) {
+		return phase(pl.procFiles, pl.ctx)
+	})
+	return p
+}
+
+// WithOutputOnlyPhase wraps a phase that only returns GenerationResult
+func (p *Pipeline) WithOutputOnlyPhase(phase func(*ProcessedFiles, BuildContext) GenerationResult) *Pipeline {
+	p.phases = append(p.phases, func(pl *Pipeline) (*ProcessedFiles, GenerationResult) {
+		return pl.procFiles, phase(pl.procFiles, pl.ctx)
+	})
+	return p
+}
+
+func (p *Pipeline) Execute() (*ProcessedFiles, GenerationResult) {
+	startTime := time.Now()
+
+	for _, phase := range p.phases {
+		var newResult GenerationResult
+		p.procFiles, newResult = phase(p)
+		p.result = p.result.Add(newResult)
+	}
+
+	p.result.SetStartTime(startTime)
+	return p.procFiles, p.result
+}

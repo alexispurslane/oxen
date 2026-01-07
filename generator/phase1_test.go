@@ -122,7 +122,19 @@ More content`,
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := extractTags([]byte(tt.content))
-			if !reflect.DeepEqual(result, tt.expected) {
+
+			// Convert both to sets for comparison since order doesn't matter
+			resultSet := make(map[string]bool)
+			for _, tag := range result {
+				resultSet[tag] = true
+			}
+
+			expectedSet := make(map[string]bool)
+			for _, tag := range tt.expected {
+				expectedSet[tag] = true
+			}
+
+			if !reflect.DeepEqual(resultSet, expectedSet) {
 				t.Errorf("extractTags() = %v, want %v", result, tt.expected)
 			}
 		})
@@ -257,7 +269,19 @@ Some code block
 	}
 
 	expectedTags := []string{"emacs", "testing"}
-	if !reflect.DeepEqual(result.Tags, expectedTags) {
+
+	// Compare as sets since tag order doesn't matter
+	resultSet := make(map[string]bool)
+	for _, tag := range result.Tags {
+		resultSet[tag] = true
+	}
+
+	expectedSet := make(map[string]bool)
+	for _, tag := range expectedTags {
+		expectedSet[tag] = true
+	}
+
+	if !reflect.DeepEqual(resultSet, expectedSet) {
 		t.Errorf("Tags = %v, want %v", result.Tags, expectedTags)
 	}
 
@@ -345,7 +369,7 @@ Nested content here.
 `)
 
 	ctx := CreateTestBuildContext(tmpDir, "", "Test Site", false)
-	procFiles, result := FindAndProcessOrgFiles(*ctx)
+	procFiles, result := FindAndProcessOrgFiles(nil, *ctx)
 
 	if result.TotalFilesScanned != 3 {
 		t.Errorf("TotalFilesScanned = %d, want 3", result.TotalFilesScanned)

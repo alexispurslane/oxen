@@ -15,7 +15,7 @@ import (
 // modification times, and UUIDs. Returns a ProcessedFiles
 // containing all discovered files along with populated UuidMap
 // and TagMap for cross-reference lookups, plus a GenerationResult.
-func FindAndProcessOrgFiles(ctx BuildContext) (*ProcessedFiles, GenerationResult) {
+func FindAndProcessOrgFiles(_ *ProcessedFiles, ctx BuildContext) (*ProcessedFiles, GenerationResult) {
 	slog.Debug("Starting Phase 1: collecting and processing org files", "root", ctx.Root)
 	files := collectOrgFiles(ctx.Root)
 	slog.Debug("Collected org files", "count", len(files))
@@ -44,19 +44,11 @@ func FindAndProcessOrgFiles(ctx BuildContext) (*ProcessedFiles, GenerationResult
 			if len(fi.UUIDs) > 0 {
 				atomic.AddInt64(&filesWithUUIDs, 1)
 			}
+
 			for _, tag := range fi.Tags {
-				existing, _ := procFiles.TagMap.LoadOrStore(tag, []FileInfo{*fi})
+				existing, _ := procFiles.TagMap.LoadOrStore(tag, []FileInfo{})
 				if existingSlice, ok := existing.([]FileInfo); ok {
-					duplicate := false
-					for _, f := range existingSlice {
-						if f.Path == fi.Path {
-							duplicate = true
-							break
-						}
-					}
-					if !duplicate {
-						procFiles.TagMap.Store(tag, append(existingSlice, *fi))
-					}
+					procFiles.TagMap.Store(tag, append(existingSlice, *fi))
 				}
 			}
 		}(i)
@@ -103,26 +95,19 @@ func processFile(filePath, root string, procFiles *ProcessedFiles) (*FileInfo, e
 	absPath := filepath.Join(root, filePath)
 	slog.Debug("Processing org file", "path", filePath)
 
-	file, err := os.Open(absPath)
+	data, err := os.ReadFile(absPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %w", err)
-	}
-	defer file.Close()
-
-	info, err := file.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("failed to stat file: %w", err)
+		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
-	size := info.Size()
-	if size == 0 {
+	if len(data) == 0 {
 		slog.Debug("Skipping empty file", "path", filePath)
 		return nil, nil
 	}
 
-	data, err := os.ReadFile(absPath)
+	info, err := os.Stat(absPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read file: %w", err)
+		return nil, fmt.Errorf("failed to stat file: %w", err)
 	}
 
 	resultFI := &FileInfo{
@@ -179,7 +164,7 @@ func extractTitle(orgContent []byte) string {
 func extractTags(orgContent []byte) []string {
 	s := string(orgContent)
 	lines := strings.Split(s, "\n")
-	var tags []string
+	uniqueTags := make(map[string]bool)
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -198,16 +183,23 @@ func extractTags(orgContent []byte) []string {
 			tagParts := strings.SplitSeq(tagStr, ":")
 			for tag := range tagParts {
 				if tag != "" {
-					tags = append(tags, tag)
+					uniqueTags[tag] = true
 				}
-			}
-			if len(tags) > 0 {
-				slog.Debug("Extracted tags from headline", "tags", tags)
 			}
 			break
 		}
 	}
 
+	if len(uniqueTags) == 0 {
+		return nil
+	}
+
+	tags := make([]string, 0, len(uniqueTags))
+	for tag := range uniqueTags {
+		tags = append(tags, tag)
+	}
+
+	slog.Debug("Extracted tags from headline", "tags", tags)
 	return tags
 }
 

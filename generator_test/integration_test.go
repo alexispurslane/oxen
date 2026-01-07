@@ -69,7 +69,7 @@ This is the actual home page.
 		SiteName:     "Test Site",
 	}
 
-	procFiles, result1 := generator.FindAndProcessOrgFiles(*ctx)
+	procFiles, result1 := generator.FindAndProcessOrgFiles(nil, *ctx)
 
 	if result1.TotalFilesScanned != 4 {
 		t.Errorf("Expected 4 files scanned, got %d", result1.TotalFilesScanned)
@@ -190,7 +190,7 @@ Link to [[id:550e8400-e29b-41d4-a716-446655440010][Root]] and [[id:550e8400-e29b
 		SiteName:     "Complex Site",
 	}
 
-	procFiles, result1 := generator.FindAndProcessOrgFiles(*ctx)
+	procFiles, result1 := generator.FindAndProcessOrgFiles(nil, *ctx)
 	if result1.TotalFilesScanned != 4 {
 		t.Errorf("Expected 4 files scanned, got %d", result1.TotalFilesScanned)
 	}
@@ -293,7 +293,7 @@ Different link styles:
 		SiteName:     "Variation Test",
 	}
 
-	procFiles, result1 := generator.FindAndProcessOrgFiles(*ctx)
+	procFiles, result1 := generator.FindAndProcessOrgFiles(nil, *ctx)
 	if result1.FilesWithUUIDs != 4 {
 		t.Errorf("Expected 4 files with UUIDs, got %d", result1.FilesWithUUIDs)
 	}

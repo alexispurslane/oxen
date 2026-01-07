@@ -172,7 +172,7 @@ func GenerateIndexPage(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templa
 
 // CopyStaticFiles copies static assets from the static directory to the output directory.
 // Returns a GenerationResult with counts of copied files and errors.
-func CopyStaticFiles(ctx BuildContext) (result GenerationResult) {
+func CopyStaticFiles(_ *ProcessedFiles, ctx BuildContext) (result GenerationResult) {
 	slog.Debug("Starting Phase 3c: copying static files")
 
 	staticDir := filepath.Join(ctx.Root, "static")
