@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/niklasfasching/go-org/org"
 )
 
 type BuildContext struct {
@@ -43,12 +44,13 @@ var (
 var templates embed.FS
 
 type FileInfo struct {
-	Path    string
-	ModTime time.Time
-	Preview string
-	Title   string
-	Tags    []string
-	UUIDs   []string
+	Path      string
+	ModTime   time.Time
+	Preview   string
+	Title     string
+	Tags      []string
+	UUIDs     []string
+	ParsedOrg *org.Document
 }
 
 type PageData struct {
@@ -99,7 +101,7 @@ func (r GenerationResult) Add(other GenerationResult) GenerationResult {
 }
 
 func (r GenerationResult) PrintSummary(procFiles *ProcessedFiles) {
-	duration := time.Now().Sub(r.startTime)
+	duration := time.Since(r.startTime)
 
 	type tagCount struct {
 		name  string

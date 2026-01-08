@@ -1,10 +1,13 @@
 package generator
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/niklasfasching/go-org/org"
 )
 
 func MustCreateTempDir(t *testing.T, prefix string) string {
@@ -22,32 +25,49 @@ func TestExtractUUIDs(t *testing.T) {
 		expected []string
 	}{
 		{
-			name:     "single_uuid",
-			content:  ":PROPERTIES:\n:ID:       550e8400-e29b-41d4-a716-446655440000\n:END:",
+			name: "single_uuid",
+			content: `* Headline
+:PROPERTIES:
+:ID:       550e8400-e29b-41d4-a716-446655440000
+:END:`,
 			expected: []string{"550e8400-e29b-41d4-a716-446655440000"},
 		},
 		{
-			name:     "multiple_uuids_lowercase_and_uppercase",
-			content:  ":PROPERTIES:\n:ID:       550e8400-e29b-41d4-a716-446655440000\n:END:\n\n:PROPERTIES:\n:id:       550e8400-e29b-41d4-a716-446655440001\n:END:",
+			name: "multiple_uuids_in_different_headlines",
+			content: `* First Headline
+:PROPERTIES:
+:ID:       550e8400-e29b-41d4-a716-446655440000
+:END:
+
+* Second Headline
+:PROPERTIES:
+:id:       550e8400-e29b-41d4-a716-446655440001
+:END:`,
 			expected: []string{"550e8400-e29b-41d4-a716-446655440000", "550e8400-e29b-41d4-a716-446655440001"},
 		},
 		{
-			name:     "no_uuid",
-			content:  "This content has no UUIDs",
+			name: "no_uuid",
+			content: `* Headline
+This content has no UUIDs`,
 			expected: nil,
 		},
 		{
-			name:     "whitespace_handling",
-			content:  ":PROPERTIES:\n:ID:         550e8400-e29b-41d4-a716-446655440000\n:END:",
+			name: "whitespace_handling",
+			content: `* Headline
+:PROPERTIES:
+:ID:         550e8400-e29b-41d4-a716-446655440000
+:END:`,
 			expected: []string{"550e8400-e29b-41d4-a716-446655440000"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := extractUUIDs([]byte(tt.content))
+			conf := org.New()
+			doc := conf.Parse(bytes.NewReader([]byte(tt.content)), "test.org")
+			result := extractUUIDsFromAST(doc)
 			if !reflect.DeepEqual(result, tt.expected) {
-				t.Errorf("extractUUIDs() = %v, want %v", result, tt.expected)
+				t.Errorf("extractUUIDsFromAST() = %v, want %v", result, tt.expected)
 			}
 		})
 	}

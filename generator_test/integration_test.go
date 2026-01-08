@@ -1,6 +1,7 @@
 package generator_test
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 )
 
 func TestE2E_Phases1And2_IDLinkResolution(t *testing.T) {
+	slog.Debug("FOOOOOOOOOOOOOOOOOO")
 	tmpDir := createTempDir(t, "e2e-phases12-")
 	defer os.RemoveAll(tmpDir)
 
@@ -26,11 +28,10 @@ Check out [[id:550e8400-e29b-41d4-a716-446655440001][Document One]] or [[id:550e
 `)
 
 	createTestFile(t, tmpDir, "doc1.org", `#+title: Document One
+* Doc 1 :docs:
 :PROPERTIES:
 :ID:       550e8400-e29b-41d4-a716-446655440001
 :END:
-
-* Doc 1 :docs:
 
 This is document one.
 
@@ -40,11 +41,10 @@ See also [[id:550e8400-e29b-41d4-a716-446655440002][Document Two]] and [[id:0000
 	subdir := filepath.Join(tmpDir, "subdir")
 	os.MkdirAll(subdir, 0755)
 	createTestFile(t, subdir, "doc2.org", `#+title: Document Two
+* Doc 2 :docs:subdirectory:
 :PROPERTIES:
 :ID:       550e8400-e29b-41d4-a716-446655440002
 :END:
-
-* Doc 2 :docs:subdirectory:
 
 This is document two in a subdirectory.
 
@@ -52,11 +52,11 @@ Link back to [[id:550e8400-e29b-41d4-a716-446655440001][Document One]] or to [[i
 `)
 
 	createTestFile(t, tmpDir, "home.org", `#+title: Home
+* Home :home:
 :PROPERTIES:
 :ID: 00000000-0000-0000-0000-000000000000
 :END:
 
-* Home :home:
 
 This is the actual home page.
 `)
@@ -137,11 +137,11 @@ func TestE2E_ComplexDirectoryStructure(t *testing.T) {
 	os.MkdirAll(destDir, 0755)
 
 	createTestFile(t, tmpDir, "root.org", `#+title: Root
+* Root :root:
 :PROPERTIES:
 :ID: 550e8400-e29b-41d4-a716-446655440010
 :END:
 
-* Root :root:
 
 Link to [[id:550e8400-e29b-41d4-a716-446655440011][Level 1A]] and [[id:550e8400-e29b-41d4-a716-446655440030][Deep Level 1B]].
 `)
@@ -149,11 +149,11 @@ Link to [[id:550e8400-e29b-41d4-a716-446655440011][Level 1A]] and [[id:550e8400-
 	dir1 := filepath.Join(tmpDir, "level1a")
 	os.MkdirAll(dir1, 0755)
 	createTestFile(t, dir1, "file1.org", `#+title: Level 1A
+* Level 1A :level1:
 :PROPERTIES:
 :ID:       550e8400-e29b-41d4-a716-446655440011
 :END:
 
-* Level 1A :level1:
 
 Link to [[id:550e8400-e29b-41d4-a716-446655440010][Root]] and [[id:550e8400-e29b-41d4-a716-446655440020][Level 1B]].
 `)
@@ -161,11 +161,11 @@ Link to [[id:550e8400-e29b-41d4-a716-446655440010][Root]] and [[id:550e8400-e29b
 	dir2 := filepath.Join(tmpDir, "level1b")
 	os.MkdirAll(dir2, 0755)
 	createTestFile(t, dir2, "file2.org", `#+title: Level 1B
+* Level 1B :level1:
 :PROPERTIES:
 :ID:       550e8400-e29b-41d4-a716-446655440020
 :END:
 
-* Level 1B :level1:
 
 Link to [[id:550e8400-e29b-41d4-a716-446655440010][Root]] and [[id:550e8400-e29b-41d4-a716-446655440011][Level 1A]].
 `)
@@ -173,11 +173,11 @@ Link to [[id:550e8400-e29b-41d4-a716-446655440010][Root]] and [[id:550e8400-e29b
 	deep := filepath.Join(dir2, "deep")
 	os.MkdirAll(deep, 0755)
 	createTestFile(t, deep, "nested.org", `#+title: Deep Nested
+
+* Deep :deep:
 :PROPERTIES:
 :ID:       550e8400-e29b-41d4-a716-446655440030
 :END:
-
-* Deep :deep:
 
 Link to [[id:550e8400-e29b-41d4-a716-446655440010][Root]] and [[id:550e8400-e29b-41d4-a716-446655440020][Parent]].
 `)
@@ -253,36 +253,37 @@ Different link styles:
 `)
 
 	createTestFile(t, tmpDir, "target1.org", `#+title: Target 1
+
+* Target 1 :targets:
 :PROPERTIES:
 :ID:       550e8400-e29b-41d4-a716-446655440101
 :END:
 
-* Target 1 :targets:
 `)
 
 	createTestFile(t, tmpDir, "target2.org", `#+title: Target 2
+* Target 2 :targets:
 :PROPERTIES:
 :ID:       550e8400-e29b-41d4-a716-446655440102
 :END:
 
-* Target 2 :targets:
 `)
 
 	createTestFile(t, tmpDir, "target3.org", `#+title: Target 3
+* Target 3 :targets:
 :PROPERTIES:
 :ID:       550e8400-e29b-41d4-a716-446655440103
 :END:
 
-* Target 3 :targets:
 `)
 
 	createTestFile(t, tmpDir, "target4.org", `#+title: Target 4
+* Target 4 :targets:
 :PROPERTIES:
 :ID:       550e8400-e29b-41d4-a716-446655440104
 :ID:       550e8400-e29b-41d4-a716-446655440105
 :END:
 
-* Target 4 :targets:
 `)
 
 	ctx := &generator.BuildContext{

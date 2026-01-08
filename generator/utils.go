@@ -2,7 +2,6 @@ package generator
 
 import (
 	"os"
-	"strings"
 )
 
 func copyFile(src, dst string) error {
@@ -11,39 +10,6 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return os.WriteFile(dst, data, 0644)
-}
-
-func extractUUIDs(data []byte) []string {
-	s := string(data)
-	var uuids []string
-
-	for i := 0; i < len(s); {
-		// Search for :id: or :ID: case-insensitively
-		idx := -1
-		upperIdx := strings.Index(s[i:], ":ID:")
-		lowerIdx := strings.Index(s[i:], ":id:")
-
-		if upperIdx != -1 && (lowerIdx == -1 || upperIdx < lowerIdx) {
-			idx = upperIdx
-		} else if lowerIdx != -1 {
-			idx = lowerIdx
-		} else {
-			break
-		}
-
-		idx += i + 4
-		for idx < len(s) && s[idx] == ' ' {
-			idx++
-		}
-
-		if idx+36 <= len(s) && isValidUUID(s[idx:idx+36]) {
-			uuids = append(uuids, s[idx:idx+36])
-			i = idx + 36
-		} else {
-			i = idx + 1
-		}
-	}
-	return uuids
 }
 
 func isValidUUID(s string) bool {

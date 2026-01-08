@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -8,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/niklasfasching/go-org/org"
 )
 
 func TestExtractTitle(t *testing.T) {
@@ -59,9 +62,11 @@ Content`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := extractTitle([]byte(tt.content))
+			conf := org.New()
+			doc := conf.Parse(bytes.NewReader([]byte(tt.content)), "test.org")
+			result := extractTitleFromAST(doc)
 			if result != tt.expected {
-				t.Errorf("extractTitle() = %q, want %q", result, tt.expected)
+				t.Errorf("extractTitleFromAST() = %q, want %q", result, tt.expected)
 			}
 		})
 	}
@@ -81,15 +86,15 @@ Content`,
 		},
 		{
 			name: "multiple_tags",
-			content: `* Headline :emacs:org-mode:testing:
+			content: `* Headline :emacs:orgmode:testing:
 Content`,
-			expected: []string{"emacs", "org-mode", "testing"},
+			expected: []string{"emacs", "orgmode", "testing"},
 		},
 		{
 			name: "tags_with_text_after",
 			content: `* Headline :tag1:tag2: some more text
 Content here`,
-			expected: []string{"tag1", "tag2"},
+			expected: []string{},
 		},
 		{
 			name: "no_tags",
@@ -121,7 +126,9 @@ More content`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := extractTags([]byte(tt.content))
+			conf := org.New()
+			doc := conf.Parse(bytes.NewReader([]byte(tt.content)), "test.org")
+			result := extractTagsFromAST(doc)
 
 			// Convert both to sets for comparison since order doesn't matter
 			resultSet := make(map[string]bool)
@@ -135,7 +142,7 @@ More content`,
 			}
 
 			if !reflect.DeepEqual(resultSet, expectedSet) {
-				t.Errorf("extractTags() = %v, want %v", result, tt.expected)
+				t.Errorf("extractTagsFromAST() = %v, want %v", result, tt.expected)
 			}
 		})
 	}
@@ -224,9 +231,11 @@ This is a very long content that should be truncated when it exceeds the maximum
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := extractPreview([]byte(tt.content), tt.maxLen)
+			conf := org.New()
+			doc := conf.Parse(bytes.NewReader([]byte(tt.content)), "test.org")
+			result := extractPreviewFromAST(doc, tt.maxLen)
 			if result != tt.expected {
-				t.Errorf("extractPreview() = %q, want %q", result, tt.expected)
+				t.Errorf("extractPreviewFromAST() = %q, want %q", result, tt.expected)
 			}
 		})
 	}
@@ -238,6 +247,9 @@ func TestProcessFile(t *testing.T) {
 
 	testContent := `#+title: Test Document
 * Test Headline :emacs:testing:
+:PROPERTIES:
+:ID: 550e8400-e29b-41d4-a716-446655440000
+:END:
 
 This is the first paragraph of the document.
 It contains some content that will be used for the preview.
@@ -246,8 +258,10 @@ It contains some content that will be used for the preview.
 Some code block
 #+end_src
 
-:ID: 550e8400-e29b-41d4-a716-446655440000
+* Another Headline
+:PROPERTIES:
 :ID: 123e4567-e89b-12d3-a456-426614174000
+:END:
 `
 
 	orgFile := filepath.Join(tmpDir, "test.org")
@@ -348,10 +362,11 @@ func TestFindAndProcessOrgFiles(t *testing.T) {
 
 	CreateTestOrgFile(tmpDir, "doc1.org", `#+title: Document One
 * First Doc :emacs:org:
+:PROPERTIES:
+:ID: 550e8400-e29b-41d4-a716-446655440001
+:END:
 
 This is the first document content.
-
-:id: 550e8400-e29b-41d4-a716-446655440001
 `)
 
 	CreateTestOrgFile(tmpDir, "doc2.org", `* Second Document :emacs:
@@ -362,10 +377,11 @@ This is the second document content.
 	os.MkdirAll(filepath.Join(tmpDir, "subdir"), 0755)
 	CreateTestOrgFile(tmpDir, "subdir/nested.org", `#+title: Nested Doc
 * Nested :testing:
+:PROPERTIES:
+:ID: 550e8400-e29b-41d4-a716-446655440002
+:END:
 
 Nested content here.
-
-:id: 550e8400-e29b-41d4-a716-446655440002
 `)
 
 	ctx := CreateTestBuildContext(tmpDir, "", "Test Site", false)

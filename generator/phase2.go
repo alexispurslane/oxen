@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	goahocorasick "github.com/anknown/ahocorasick"
 	"github.com/niklasfasching/go-org/org"
 )
 
@@ -132,7 +131,22 @@ func GenerateHtmlPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templa
 		wg.Add(1)
 		go func(fi FileInfo) {
 			defer wg.Done()
-			if err := generateHTML(fi, ctx, keywords, replacements, tmpl); err != nil {
+
+			// Calculate relative paths for this file
+			var relativeTargets []string
+			currentDir := filepath.Dir(fi.Path)
+			for _, targetPath := range replacements {
+				targetDir := filepath.Dir(targetPath)
+				relPath, err := filepath.Rel(currentDir, targetDir)
+				if err != nil {
+					relPath = targetDir
+				}
+				baseName := strings.TrimSuffix(filepath.Base(targetPath), ".org") + ".html"
+				relativePath := filepath.Join(relPath, baseName)
+				relativeTargets = append(relativeTargets, relativePath)
+			}
+
+			if err := generateHTML(fi, ctx, keywords, relativeTargets, tmpl); err != nil {
 				atomic.AddInt64(&errors, 1)
 			} else {
 				atomic.AddInt64(&filesGenerated, 1)
@@ -156,7 +170,6 @@ func generateHTML(fi FileInfo, ctx BuildContext, keywords []string, targetPaths 
 		return nil
 	}
 
-	absPath := filepath.Join(ctx.Root, fi.Path)
 	slog.Debug("Generating HTML for file", "path", fi.Path)
 	publicDir := ctx.DestDir
 	htmlRelativePath := strings.TrimSuffix(fi.Path, ".org") + ".html"
@@ -171,15 +184,7 @@ func generateHTML(fi FileInfo, ctx BuildContext, keywords []string, targetPaths 
 		}
 	}
 
-	data, err := os.ReadFile(absPath)
-	if err != nil {
-		slog.Warn("Error reading file", "path", fi.Path, "error", err)
-		return err
-	}
-
-	replacedData := replaceUUIDLinks(data, keywords, targetPaths, fi.Path)
-
-	htmlContent, err := convertOrgToHTML(replacedData, fi.Path)
+	htmlContent, err := convertOrgToHTMLWithLinkReplacement(fi.ParsedOrg, fi, keywords, targetPaths)
 	if err != nil {
 		slog.Warn("Error converting to HTML", "path", fi.Path, "error", err)
 		return err
@@ -215,85 +220,42 @@ func generateHTML(fi FileInfo, ctx BuildContext, keywords []string, targetPaths 
 	return nil
 }
 
-func convertOrgToHTML(orgContent []byte, filePath string) (string, error) {
-	lines := strings.Split(string(orgContent), "\n")
-	if len(lines) > 0 && strings.HasPrefix(lines[0], "* ") {
-		lines = lines[1:]
-	}
-	contentWithoutTitle := strings.Join(lines, "\n")
-
-	conf := org.New()
-	conf.DefaultSettings = map[string]string{
-		"OPTIONS": "toc:nil <:t e:t f:t pri:t todo:t tags:t title:t ealb:nil",
-	}
-	doc := conf.Parse(bytes.NewReader([]byte(contentWithoutTitle)), filePath)
-	writer := org.NewHTMLWriter()
-	return doc.Write(writer)
+type uuidReplacingWriter struct {
+	*org.HTMLWriter
+	keywords    []string
+	targetPaths []string
+	currentPath string
 }
 
-// replaceUUIDLinks finds id:uuid links in org-mode syntax and replaces them with file:path.html links
-// It converts [[id:uuid][text]] to [[file:path.html][text]] format
-// The org-mode parser then converts this to <a href="path.html">text</a> HTML
-func replaceUUIDLinks(data []byte, keywords []string, targetPaths []string, currentFilePath string) []byte {
-	if len(keywords) == 0 || len(targetPaths) != len(keywords) {
-		slog.Debug("Skipping UUID link replacement: no keywords or mismatch", "keyword_count", len(keywords))
-		return data
-	}
+func (w *uuidReplacingWriter) WriterWithExtensions() org.Writer {
+	return w
+}
 
-	mach := new(goahocorasick.Machine)
-
-	var keywordRunes [][]rune
-	for _, kw := range keywords {
-		keywordRunes = append(keywordRunes, []rune(kw))
-	}
-
-	err := mach.Build(keywordRunes)
-	if err != nil {
-		slog.Warn("Failed to build Aho-Corasick machine", "error", err)
-		return data
-	}
-
-	content := []rune(string(data))
-	terms := mach.MultiPatternSearch(content, false)
-
-	if len(terms) == 0 {
-		slog.Debug("No UUID links found to replace", "path", currentFilePath)
-		return data
-	}
-
-	slog.Debug("Found UUID links to replace", "path", currentFilePath, "match_count", len(terms))
-
-	targetPathMap := make(map[string]string)
-	for i, kw := range keywords {
-		targetPathMap[kw] = targetPaths[i]
-	}
-
-	currentDir := filepath.Dir(currentFilePath)
-
-	var result []rune
-	lastPos := 0
-
-	for _, term := range terms {
-		keyword := string(term.Word)
-		targetPath := targetPathMap[keyword]
-
-		relPath, err := filepath.Rel(currentDir, targetPath)
-		if err != nil {
-			relPath = targetPath
+func (w *uuidReplacingWriter) WriteRegularLink(link org.RegularLink) {
+	if link.Protocol == "id" && len(link.URL) >= 39 && strings.HasPrefix(link.URL, "id:") {
+		uuid := strings.TrimPrefix(link.URL, "id:")
+		for i, keyword := range w.keywords {
+			if keyword == "id:"+uuid {
+				targetPath := w.targetPaths[i]
+				// targetPath already has .html extension and is relative
+				link.Protocol = "file"
+				link.URL = "file:" + targetPath
+				link.AutoLink = false
+				break
+			}
 		}
-
-		replacement := fmt.Sprintf("file:%s.html", strings.TrimSuffix(relPath, ".org"))
-
-		matchStart := term.Pos
-		matchEnd := term.Pos + len(term.Word)
-
-		result = append(result, content[lastPos:matchStart]...)
-		result = append(result, []rune(replacement)...)
-
-		lastPos = matchEnd
 	}
+	w.HTMLWriter.WriteRegularLink(link)
+}
 
-	result = append(result, content[lastPos:]...)
-
-	return []byte(string(result))
+func convertOrgToHTMLWithLinkReplacement(doc *org.Document, fi FileInfo, keywords []string, targetPaths []string) (string, error) {
+	htmlWriter := org.NewHTMLWriter()
+	writer := &uuidReplacingWriter{
+		HTMLWriter:  htmlWriter,
+		keywords:    keywords,
+		targetPaths: targetPaths,
+		currentPath: fi.Path,
+	}
+	htmlWriter.ExtendingWriter = writer
+	return doc.Write(writer)
 }

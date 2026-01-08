@@ -61,7 +61,7 @@ func buildSite(root string, forceRebuild bool, destDir string, siteName string) 
 
 	startTime := time.Now()
 
-	_, result := generator.NewPipeline(ctx).
+	procFiles, result := generator.NewPipeline(ctx).
 		WithFullPhase(generator.FindAndProcessOrgFiles).
 		WithOutputOnlyPhase(func(procFiles *generator.ProcessedFiles, ctx generator.BuildContext) generator.GenerationResult {
 			pageTmpl, tagTmpl, indexTmpl, _, err := generator.SetupTemplates(absPath)
@@ -76,7 +76,7 @@ func buildSite(root string, forceRebuild bool, destDir string, siteName string) 
 		Execute()
 
 	result.SetStartTime(startTime)
-	result.PrintSummary(nil)
+	result.PrintSummary(procFiles)
 
 	if srv != nil {
 		srv.NotifyReload()

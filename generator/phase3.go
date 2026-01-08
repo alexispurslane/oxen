@@ -9,6 +9,8 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
+
+	"github.com/niklasfasching/go-org/org"
 )
 
 // GenerateTagPages creates a tag-*.html page for each unique tag, listing all files
@@ -139,7 +141,13 @@ func GenerateIndexPage(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templa
 	var preambleContent template.HTML
 	preamblePath := filepath.Join(ctx.Root, "sitemap-preamble.org")
 	if data, err := os.ReadFile(preamblePath); err == nil {
-		if htmlContent, err := convertOrgToHTML(data, "sitemap-preamble.org"); err == nil {
+		conf := org.New()
+		conf.DefaultSettings = map[string]string{
+			"OPTIONS": "toc:nil <:t e:t f:t pri:t todo:t tags:t title:t ealb:nil",
+		}
+		doc := conf.Parse(bytes.NewReader(data), "sitemap-preamble.org")
+		writer := org.NewHTMLWriter()
+		if htmlContent, err := doc.Write(writer); err == nil {
 			preambleContent = template.HTML(htmlContent)
 		}
 	}
