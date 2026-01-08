@@ -299,7 +299,10 @@ Some code block
 		t.Errorf("Tags = %v, want %v", result.Tags, expectedTags)
 	}
 
-	expectedUUIDs := []string{"550e8400-e29b-41d4-a716-446655440000", "123e4567-e89b-12d3-a456-426614174000"}
+	expectedUUIDs := map[string]int{
+		"550e8400-e29b-41d4-a716-446655440000": 1,
+		"123e4567-e89b-12d3-a456-426614174000": 2,
+	}
 	if !reflect.DeepEqual(result.UUIDs, expectedUUIDs) {
 		t.Errorf("UUIDs = %v, want %v", result.UUIDs, expectedUUIDs)
 	}
@@ -311,13 +314,17 @@ Some code block
 		t.Error("Preview doesn't contain expected content")
 	}
 
-	for _, uuid := range expectedUUIDs {
-		storedPath, ok := procFiles.UuidMap.Load("" + uuid)
+	for uuid, index := range expectedUUIDs {
+		stored, ok := procFiles.UuidMap.Load(uuid)
 		if !ok {
 			t.Errorf("UUID %s not found in UuidMap", uuid)
 		}
-		if storedPath != "test.org" {
-			t.Errorf("UuidMap[%s] = %v, want test.org", uuid, storedPath)
+		loc := stored.(HeaderLocation)
+		if loc.FilePath != "test.org" {
+			t.Errorf("UuidMap[%s].FilePath = %v, want test.org", uuid, loc.FilePath)
+		}
+		if loc.HeaderIndex != index {
+			t.Errorf("UuidMap[%s].HeaderIndex = %v, want %d", uuid, loc.HeaderIndex, index)
 		}
 	}
 
@@ -442,18 +449,30 @@ Nested content here.
 	}
 
 	// Verify UUID paths in UuidMap
-	storedPath1, ok := procFiles.UuidMap.Load("550e8400-e29b-41d4-a716-446655440001")
+	stored1, ok := procFiles.UuidMap.Load("550e8400-e29b-41d4-a716-446655440001")
 	if !ok {
 		t.Error("UUID from doc1.org not found in UuidMap")
-	} else if storedPath1 != "doc1.org" {
-		t.Errorf("UuidMap[doc1 UUID] = %v, want doc1.org", storedPath1)
+	} else {
+		loc1 := stored1.(HeaderLocation)
+		if loc1.FilePath != "doc1.org" {
+			t.Errorf("UuidMap[doc1 UUID].FilePath = %v, want doc1.org", loc1.FilePath)
+		}
+		if loc1.HeaderIndex != 1 {
+			t.Errorf("UuidMap[doc1 UUID].HeaderIndex = %v, want 1", loc1.HeaderIndex)
+		}
 	}
 
-	storedPath2, ok := procFiles.UuidMap.Load("550e8400-e29b-41d4-a716-446655440002")
+	stored2, ok := procFiles.UuidMap.Load("550e8400-e29b-41d4-a716-446655440002")
 	if !ok {
-		t.Error("UUID from doc2.org not found in UuidMap")
-	} else if storedPath2 != "subdir/nested.org" {
-		t.Errorf("UuidMap[subdir/nested.org UUID] = %v, want subdir/nested.org", storedPath2)
+		t.Error("UUID from nested.org not found in UuidMap")
+	} else {
+		loc2 := stored2.(HeaderLocation)
+		if loc2.FilePath != "subdir/nested.org" {
+			t.Errorf("UuidMap[nested.org UUID].FilePath = %v, want subdir/nested.org", loc2.FilePath)
+		}
+		if loc2.HeaderIndex != 1 {
+			t.Errorf("UuidMap[nested.org UUID].HeaderIndex = %v, want 1", loc2.HeaderIndex)
+		}
 	}
 
 }

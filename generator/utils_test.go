@@ -22,7 +22,7 @@ func TestExtractUUIDs(t *testing.T) {
 	tests := []struct {
 		name     string
 		content  string
-		expected []string
+		expected map[string]int
 	}{
 		{
 			name: "single_uuid",
@@ -30,7 +30,7 @@ func TestExtractUUIDs(t *testing.T) {
 :PROPERTIES:
 :ID:       550e8400-e29b-41d4-a716-446655440000
 :END:`,
-			expected: []string{"550e8400-e29b-41d4-a716-446655440000"},
+			expected: map[string]int{"550e8400-e29b-41d4-a716-446655440000": 1},
 		},
 		{
 			name: "multiple_uuids_in_different_headlines",
@@ -43,13 +43,16 @@ func TestExtractUUIDs(t *testing.T) {
 :PROPERTIES:
 :id:       550e8400-e29b-41d4-a716-446655440001
 :END:`,
-			expected: []string{"550e8400-e29b-41d4-a716-446655440000", "550e8400-e29b-41d4-a716-446655440001"},
+			expected: map[string]int{
+				"550e8400-e29b-41d4-a716-446655440000": 1,
+				"550e8400-e29b-41d4-a716-446655440001": 2,
+			},
 		},
 		{
 			name: "no_uuid",
 			content: `* Headline
 This content has no UUIDs`,
-			expected: nil,
+			expected: map[string]int{},
 		},
 		{
 			name: "whitespace_handling",
@@ -57,7 +60,7 @@ This content has no UUIDs`,
 :PROPERTIES:
 :ID:         550e8400-e29b-41d4-a716-446655440000
 :END:`,
-			expected: []string{"550e8400-e29b-41d4-a716-446655440000"},
+			expected: map[string]int{"550e8400-e29b-41d4-a716-446655440000": 1},
 		},
 	}
 

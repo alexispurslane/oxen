@@ -79,12 +79,14 @@ This is the actual home page.
 	}
 
 	uuid1, _ := procFiles.UuidMap.Load("550e8400-e29b-41d4-a716-446655440001")
-	if uuid1 != "doc1.org" {
+	loc1 := uuid1.(generator.HeaderLocation)
+	if loc1.FilePath != "doc1.org" {
 		t.Errorf("Expected doc1.org for 550e8400-e29b-41d4-a716-446655440001, got %v", uuid1)
 	}
 
 	uuid2, _ := procFiles.UuidMap.Load("550e8400-e29b-41d4-a716-446655440002")
-	if uuid2 != "subdir/doc2.org" {
+	loc2 := uuid2.(generator.HeaderLocation)
+	if loc2.FilePath != "subdir/doc2.org" {
 		t.Errorf("Expected subdir/doc2.org for 550e8400-e29b-41d4-a716-446655440002, got %v", uuid2)
 	}
 
@@ -102,23 +104,23 @@ This is the actual home page.
 	}
 
 	verifyHTMLFile(t, destDir, "index.html", []string{
-		`<a href="doc1.html">`,
+		`<a href="doc1.html#headline-1">`,
 		`>Document One<`,
-		`<a href="subdir/doc2.html">`,
+		`<a href="subdir/doc2.html#headline-1">`,
 		`>Document Two<`,
 	})
 
 	verifyHTMLFile(t, destDir, "doc1.html", []string{
-		`<a href="subdir/doc2.html">`,
+		`<a href="subdir/doc2.html#headline-1">`,
 		`>Document Two<`,
-		`<a href="home.html">`,
+		`<a href="home.html#headline-1">`,
 		`>Home<`,
 	})
 
 	verifyHTMLFile(t, destDir, "subdir/doc2.html", []string{
-		`<a href="../doc1.html">`,
+		`<a href="../doc1.html#headline-1">`,
 		`>Document One<`,
-		`<a href="../home.html">`,
+		`<a href="../home.html#headline-1">`,
 		`>Home<`,
 	})
 
@@ -213,22 +215,22 @@ Link to [[id:550e8400-e29b-41d4-a716-446655440010][Root]] and [[id:550e8400-e29b
 	rootHTML := string(content)
 
 	checkLinks(t, rootHTML, []linkCheck{
-		{href: `href="level1a/file1.html"`, text: "Level 1A"},
-		{href: `href="level1b/deep/nested.html"`, text: "Deep Level 1B"},
+		{href: `href="level1a/file1.html#headline-1"`, text: "Level 1A"},
+		{href: `href="level1b/deep/nested.html#headline-1"`, text: "Deep Level 1B"},
 		{refuses: `id:`, desc: "No unresolved ID links"},
 	})
 
 	verifyHTMLFile(t, destDir, "level1a/file1.html", []string{
-		`<a href="../root.html">`,
+		`<a href="../root.html#headline-1">`,
 		`>Root<`,
-		`<a href="../level1b/file2.html">`,
+		`<a href="../level1b/file2.html#headline-1">`,
 		`>Level 1B<`,
 	})
 
 	verifyHTMLFile(t, destDir, "level1b/deep/nested.html", []string{
-		`<a href="../../root.html">`,
+		`<a href="../../root.html#headline-1">`,
 		`>Root<`,
-		`<a href="../file2.html">`,
+		`<a href="../file2.html#headline-1">`,
 		`>Parent<`,
 	})
 
@@ -312,11 +314,11 @@ Different link styles:
 	content := readHTMLFile(t, destDir, "source.html")
 
 	checkLinks(t, content, []linkCheck{
-		{href: `href="target1.html"`, text: "Simple link"},
-		{href: `href="target2.html"`, text: "inline link"},
-		{href: `href="target3.html"`, text: "first"},
-		{href: `href="target4.html"`, text: "second"},
-		{href: `href="target4.html"`}, // No description link - org-mode uses the ID itself
+		{href: `href="target1.html#headline-1"`, text: "Simple link"},
+		{href: `href="target2.html#headline-1"`, text: "inline link"},
+		{href: `href="target3.html#headline-1"`, text: "first"},
+		{href: `href="target4.html#headline-1"`, text: "second"},
+		{href: `href="target4.html#headline-1"`}, // No description link - org-mode uses the ID itself
 		{refuses: `id:`, desc: "No unresolved ID links"},
 		{refuses: `\]\[`, desc: "No org-mode link syntax remaining"},
 	})
