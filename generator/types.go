@@ -21,6 +21,11 @@ type BuildContext struct {
 	SiteName     string
 }
 
+type HeaderLocation struct {
+	FilePath    string
+	HeaderIndex int
+}
+
 type ProcessedFiles struct {
 	Files   []FileInfo
 	UuidMap sync.Map
@@ -49,7 +54,7 @@ type FileInfo struct {
 	Preview   string
 	Title     string
 	Tags      []string
-	UUIDs     []string
+	UUIDs     map[string]int
 	ParsedOrg *org.Document
 }
 

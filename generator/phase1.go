@@ -131,11 +131,13 @@ func processFile(filePath, root string, procFiles *ProcessedFiles) (*FileInfo, e
 		"path", filePath,
 		"title", resultFI.Title,
 		"tags", resultFI.Tags,
-		"uuid_count", len(resultFI.UUIDs),
-		"uuids", resultFI.UUIDs)
+		"uuid_count", len(resultFI.UUIDs))
 
-	for _, uuid := range resultFI.UUIDs {
-		procFiles.UuidMap.Store(uuid, filePath)
+	for uuid, headerIndex := range resultFI.UUIDs {
+		procFiles.UuidMap.Store(uuid, HeaderLocation{
+			FilePath:    filePath,
+			HeaderIndex: headerIndex,
+		})
 	}
 
 	return resultFI, nil
@@ -177,9 +179,8 @@ func extractTagsFromAST(doc *org.Document) []string {
 	return nil
 }
 
-func extractUUIDsFromAST(doc *org.Document) []string {
-	var uuids []string
-	seen := make(map[string]bool)
+func extractUUIDsFromAST(doc *org.Document) map[string]int {
+	uuidToHeaderIndex := make(map[string]int)
 
 	for _, node := range doc.Nodes {
 		if headline, ok := node.(org.Headline); ok {
@@ -188,9 +189,8 @@ func extractUUIDsFromAST(doc *org.Document) []string {
 				for _, prop := range headline.Properties.Properties {
 					if prop[0] == "ID" && prop[1] != "" {
 						id := prop[1]
-						if isValidUUID(id) && !seen[id] {
-							uuids = append(uuids, id)
-							seen[id] = true
+						if isValidUUID(id) {
+							uuidToHeaderIndex[id] = headline.Index
 						}
 					}
 				}
@@ -198,10 +198,10 @@ func extractUUIDsFromAST(doc *org.Document) []string {
 		}
 	}
 
-	if len(uuids) > 0 {
-		slog.Debug("Extracted UUIDs from property drawers", "uuids", uuids)
+	if len(uuidToHeaderIndex) > 0 {
+		slog.Debug("Extracted UUIDs from property drawers", "uuid_count", len(uuidToHeaderIndex))
 	}
-	return uuids
+	return uuidToHeaderIndex
 }
 
 func extractPreviewFromAST(doc *org.Document, maxLen int) string {

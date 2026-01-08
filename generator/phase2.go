@@ -104,10 +104,10 @@ func SetupTemplates(absPath string) (*template.Template, *template.Template, *te
 func GenerateHtmlPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *template.Template) GenerationResult {
 	slog.Debug("Starting Phase 2: generating HTML pages", "file_count", len(procFiles.Files))
 
-	uuidToPath := make(map[string]string)
+	uuidToPath := make(map[string]HeaderLocation)
 	procFiles.UuidMap.Range(func(key, value any) bool {
 		if k, ok := key.(string); ok {
-			if v, ok := value.(string); ok {
+			if v, ok := value.(HeaderLocation); ok {
 				uuidToPath[k] = v
 			} else {
 				slog.Warn("Warning: unexpected type in UuidMap value", "value", value)
@@ -147,7 +147,7 @@ func GenerateHtmlPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templa
 	}
 }
 
-func generateHTML(fi FileInfo, ctx BuildContext, uuidToPath map[string]string, tmpl *template.Template) error {
+func generateHTML(fi FileInfo, ctx BuildContext, uuidToPath map[string]HeaderLocation, tmpl *template.Template) error {
 	if fi.Path == "sitemap-preamble.org" {
 		slog.Debug("Skipping sitemap-preamble.org from HTML generation")
 		return nil
@@ -205,7 +205,7 @@ func generateHTML(fi FileInfo, ctx BuildContext, uuidToPath map[string]string, t
 
 type uuidReplacingWriter struct {
 	*org.HTMLWriter
-	uuidToPath  map[string]string
+	uuidToPath  map[string]HeaderLocation
 	currentPath string
 }
 
@@ -219,15 +219,15 @@ func (w *uuidReplacingWriter) WriteRegularLink(link org.RegularLink) {
 		if len(uuid) >= 36 && isValidUUID(uuid) {
 			if targetPath, ok := w.uuidToPath[uuid]; ok {
 				currentDir := filepath.Dir(w.currentPath)
-				targetDir := filepath.Dir(targetPath)
+				targetDir := filepath.Dir(targetPath.FilePath)
 				relPath, err := filepath.Rel(currentDir, targetDir)
 				if err != nil {
 					relPath = targetDir
 				}
-				baseName := strings.TrimSuffix(filepath.Base(targetPath), ".org") + ".html"
+				baseName := strings.TrimSuffix(filepath.Base(targetPath.FilePath), ".org") + ".html"
 				relativeTarget := filepath.Join(relPath, baseName)
 				link.Protocol = "file"
-				link.URL = "file:" + relativeTarget
+				link.URL = fmt.Sprintf("file:%s#headline-%d", relativeTarget, targetPath.HeaderIndex)
 				link.AutoLink = false
 			}
 		}
@@ -235,7 +235,7 @@ func (w *uuidReplacingWriter) WriteRegularLink(link org.RegularLink) {
 	w.HTMLWriter.WriteRegularLink(link)
 }
 
-func convertOrgToHTMLWithLinkReplacement(doc *org.Document, fi FileInfo, uuidToPath map[string]string) (string, error) {
+func convertOrgToHTMLWithLinkReplacement(doc *org.Document, fi FileInfo, uuidToPath map[string]HeaderLocation) (string, error) {
 	htmlWriter := org.NewHTMLWriter()
 	writer := &uuidReplacingWriter{
 		HTMLWriter:  htmlWriter,
