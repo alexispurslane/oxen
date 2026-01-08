@@ -135,7 +135,7 @@ func processFile(filePath, root string, procFiles *ProcessedFiles) (*FileInfo, e
 		"uuids", resultFI.UUIDs)
 
 	for _, uuid := range resultFI.UUIDs {
-		procFiles.UuidMap.Store("id:"+uuid, filePath)
+		procFiles.UuidMap.Store(uuid, filePath)
 	}
 
 	return resultFI, nil

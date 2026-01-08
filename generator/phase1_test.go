@@ -312,7 +312,7 @@ Some code block
 	}
 
 	for _, uuid := range expectedUUIDs {
-		storedPath, ok := procFiles.UuidMap.Load("id:" + uuid)
+		storedPath, ok := procFiles.UuidMap.Load("" + uuid)
 		if !ok {
 			t.Errorf("UUID %s not found in UuidMap", uuid)
 		}
@@ -442,14 +442,14 @@ Nested content here.
 	}
 
 	// Verify UUID paths in UuidMap
-	storedPath1, ok := procFiles.UuidMap.Load("id:550e8400-e29b-41d4-a716-446655440001")
+	storedPath1, ok := procFiles.UuidMap.Load("550e8400-e29b-41d4-a716-446655440001")
 	if !ok {
 		t.Error("UUID from doc1.org not found in UuidMap")
 	} else if storedPath1 != "doc1.org" {
 		t.Errorf("UuidMap[doc1 UUID] = %v, want doc1.org", storedPath1)
 	}
 
-	storedPath2, ok := procFiles.UuidMap.Load("id:550e8400-e29b-41d4-a716-446655440002")
+	storedPath2, ok := procFiles.UuidMap.Load("550e8400-e29b-41d4-a716-446655440002")
 	if !ok {
 		t.Error("UUID from doc2.org not found in UuidMap")
 	} else if storedPath2 != "subdir/nested.org" {

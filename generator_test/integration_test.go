@@ -78,12 +78,12 @@ This is the actual home page.
 		t.Errorf("Expected 3 files with UUIDs, got %d", result1.FilesWithUUIDs)
 	}
 
-	uuid1, _ := procFiles.UuidMap.Load("id:550e8400-e29b-41d4-a716-446655440001")
+	uuid1, _ := procFiles.UuidMap.Load("550e8400-e29b-41d4-a716-446655440001")
 	if uuid1 != "doc1.org" {
 		t.Errorf("Expected doc1.org for 550e8400-e29b-41d4-a716-446655440001, got %v", uuid1)
 	}
 
-	uuid2, _ := procFiles.UuidMap.Load("id:550e8400-e29b-41d4-a716-446655440002")
+	uuid2, _ := procFiles.UuidMap.Load("550e8400-e29b-41d4-a716-446655440002")
 	if uuid2 != "subdir/doc2.org" {
 		t.Errorf("Expected subdir/doc2.org for 550e8400-e29b-41d4-a716-446655440002, got %v", uuid2)
 	}

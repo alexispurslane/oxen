@@ -104,14 +104,11 @@ func SetupTemplates(absPath string) (*template.Template, *template.Template, *te
 func GenerateHtmlPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *template.Template) GenerationResult {
 	slog.Debug("Starting Phase 2: generating HTML pages", "file_count", len(procFiles.Files))
 
-	var keywords []string
-	var replacements []string
-
+	uuidToPath := make(map[string]string)
 	procFiles.UuidMap.Range(func(key, value any) bool {
 		if k, ok := key.(string); ok {
 			if v, ok := value.(string); ok {
-				keywords = append(keywords, k)
-				replacements = append(replacements, v)
+				uuidToPath[k] = v
 			} else {
 				slog.Warn("Warning: unexpected type in UuidMap value", "value", value)
 			}
@@ -121,7 +118,7 @@ func GenerateHtmlPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templa
 		return true
 	})
 
-	slog.Debug("Built UUID lookup map", "uuid_count", len(keywords))
+	slog.Debug("Built UUID lookup map", "uuid_count", len(uuidToPath))
 
 	var wg sync.WaitGroup
 	var filesGenerated int64
@@ -132,21 +129,7 @@ func GenerateHtmlPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templa
 		go func(fi FileInfo) {
 			defer wg.Done()
 
-			// Calculate relative paths for this file
-			var relativeTargets []string
-			currentDir := filepath.Dir(fi.Path)
-			for _, targetPath := range replacements {
-				targetDir := filepath.Dir(targetPath)
-				relPath, err := filepath.Rel(currentDir, targetDir)
-				if err != nil {
-					relPath = targetDir
-				}
-				baseName := strings.TrimSuffix(filepath.Base(targetPath), ".org") + ".html"
-				relativePath := filepath.Join(relPath, baseName)
-				relativeTargets = append(relativeTargets, relativePath)
-			}
-
-			if err := generateHTML(fi, ctx, keywords, relativeTargets, tmpl); err != nil {
+			if err := generateHTML(fi, ctx, uuidToPath, tmpl); err != nil {
 				atomic.AddInt64(&errors, 1)
 			} else {
 				atomic.AddInt64(&filesGenerated, 1)
@@ -164,7 +147,7 @@ func GenerateHtmlPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templa
 	}
 }
 
-func generateHTML(fi FileInfo, ctx BuildContext, keywords []string, targetPaths []string, tmpl *template.Template) error {
+func generateHTML(fi FileInfo, ctx BuildContext, uuidToPath map[string]string, tmpl *template.Template) error {
 	if fi.Path == "sitemap-preamble.org" {
 		slog.Debug("Skipping sitemap-preamble.org from HTML generation")
 		return nil
@@ -184,7 +167,7 @@ func generateHTML(fi FileInfo, ctx BuildContext, keywords []string, targetPaths 
 		}
 	}
 
-	htmlContent, err := convertOrgToHTMLWithLinkReplacement(fi.ParsedOrg, fi, keywords, targetPaths)
+	htmlContent, err := convertOrgToHTMLWithLinkReplacement(fi.ParsedOrg, fi, uuidToPath)
 	if err != nil {
 		slog.Warn("Error converting to HTML", "path", fi.Path, "error", err)
 		return err
@@ -222,8 +205,7 @@ func generateHTML(fi FileInfo, ctx BuildContext, keywords []string, targetPaths 
 
 type uuidReplacingWriter struct {
 	*org.HTMLWriter
-	keywords    []string
-	targetPaths []string
+	uuidToPath  map[string]string
 	currentPath string
 }
 
@@ -232,28 +214,32 @@ func (w *uuidReplacingWriter) WriterWithExtensions() org.Writer {
 }
 
 func (w *uuidReplacingWriter) WriteRegularLink(link org.RegularLink) {
-	if link.Protocol == "id" && len(link.URL) >= 39 && strings.HasPrefix(link.URL, "id:") {
+	if link.Protocol == "id" && strings.HasPrefix(link.URL, "id:") {
 		uuid := strings.TrimPrefix(link.URL, "id:")
-		for i, keyword := range w.keywords {
-			if keyword == "id:"+uuid {
-				targetPath := w.targetPaths[i]
-				// targetPath already has .html extension and is relative
+		if len(uuid) >= 36 && isValidUUID(uuid) {
+			if targetPath, ok := w.uuidToPath[uuid]; ok {
+				currentDir := filepath.Dir(w.currentPath)
+				targetDir := filepath.Dir(targetPath)
+				relPath, err := filepath.Rel(currentDir, targetDir)
+				if err != nil {
+					relPath = targetDir
+				}
+				baseName := strings.TrimSuffix(filepath.Base(targetPath), ".org") + ".html"
+				relativeTarget := filepath.Join(relPath, baseName)
 				link.Protocol = "file"
-				link.URL = "file:" + targetPath
+				link.URL = "file:" + relativeTarget
 				link.AutoLink = false
-				break
 			}
 		}
 	}
 	w.HTMLWriter.WriteRegularLink(link)
 }
 
-func convertOrgToHTMLWithLinkReplacement(doc *org.Document, fi FileInfo, keywords []string, targetPaths []string) (string, error) {
+func convertOrgToHTMLWithLinkReplacement(doc *org.Document, fi FileInfo, uuidToPath map[string]string) (string, error) {
 	htmlWriter := org.NewHTMLWriter()
 	writer := &uuidReplacingWriter{
 		HTMLWriter:  htmlWriter,
-		keywords:    keywords,
-		targetPaths: targetPaths,
+		uuidToPath:  uuidToPath,
 		currentPath: fi.Path,
 	}
 	htmlWriter.ExtendingWriter = writer
