@@ -293,8 +293,9 @@ func main() {
 			}
 			procFiles, _ := generator.FindAndProcessOrgFiles(nil, ctx)
 
-			if path, found := procFiles.UuidMap.Load("id:" + args[1]); found {
-				fmt.Printf("ID %s found in: %s\n", args[1], path.(string))
+			if path, found := procFiles.UuidMap.Load(args[1]); found {
+				location := path.(generator.HeaderLocation)
+				fmt.Printf("ID %s found in: %s (header index: %d)\n", args[1], location.FilePath, location.HeaderIndex)
 			} else {
 				fmt.Printf("ID %s not found\n", args[1])
 			}

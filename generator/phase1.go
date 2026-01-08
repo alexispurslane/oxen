@@ -182,7 +182,8 @@ func extractTagsFromAST(doc *org.Document) []string {
 func extractUUIDsFromAST(doc *org.Document) map[string]int {
 	uuidToHeaderIndex := make(map[string]int)
 
-	for _, node := range doc.Nodes {
+	var walkNodes func(node org.Node)
+	walkNodes = func(node org.Node) {
 		if headline, ok := node.(org.Headline); ok {
 			if headline.Properties != nil {
 				// Iterate through all properties to find multiple ID entries
@@ -195,7 +196,17 @@ func extractUUIDsFromAST(doc *org.Document) map[string]int {
 					}
 				}
 			}
+
+			// Recursively check children
+			for _, child := range headline.Children {
+				walkNodes(child)
+			}
 		}
+	}
+
+	// Walk all top-level nodes
+	for _, node := range doc.Nodes {
+		walkNodes(node)
 	}
 
 	if len(uuidToHeaderIndex) > 0 {
