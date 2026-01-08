@@ -23,8 +23,17 @@ type BuildContext struct {
 
 type HeaderLocation struct {
 	FilePath    string
-	HeaderIndex int
+	HeaderIndex HeaderIndex
 }
+
+// UUID represents a globally unique org mode header identifier.
+type UUID string
+
+// HeaderIndex represents the index/position of a headline in an org-mode document.
+type HeaderIndex int
+
+// UUIDMap maps UUID strings to their header indices within a file.
+type UUIDMap map[UUID]HeaderIndex
 
 type ProcessedFiles struct {
 	Files   []FileInfo
@@ -54,7 +63,7 @@ type FileInfo struct {
 	Preview   string
 	Title     string
 	Tags      []string
-	UUIDs     map[string]int
+	UUIDs     UUIDMap
 	ParsedOrg *org.Document
 }
 

@@ -299,7 +299,7 @@ Some code block
 		t.Errorf("Tags = %v, want %v", result.Tags, expectedTags)
 	}
 
-	expectedUUIDs := map[string]int{
+	expectedUUIDs := UUIDMap{
 		"550e8400-e29b-41d4-a716-446655440000": 1,
 		"123e4567-e89b-12d3-a456-426614174000": 2,
 	}
@@ -315,7 +315,7 @@ Some code block
 	}
 
 	for uuid, index := range expectedUUIDs {
-		stored, ok := procFiles.UuidMap.Load(uuid)
+		stored, ok := procFiles.UuidMap.Load(UUID(uuid))
 		if !ok {
 			t.Errorf("UUID %s not found in UuidMap", uuid)
 		}
@@ -449,7 +449,7 @@ Nested content here.
 	}
 
 	// Verify UUID paths in UuidMap
-	stored1, ok := procFiles.UuidMap.Load("550e8400-e29b-41d4-a716-446655440001")
+	stored1, ok := procFiles.UuidMap.Load(UUID("550e8400-e29b-41d4-a716-446655440001"))
 	if !ok {
 		t.Error("UUID from doc1.org not found in UuidMap")
 	} else {
@@ -462,7 +462,7 @@ Nested content here.
 		}
 	}
 
-	stored2, ok := procFiles.UuidMap.Load("550e8400-e29b-41d4-a716-446655440002")
+	stored2, ok := procFiles.UuidMap.Load(UUID("550e8400-e29b-41d4-a716-446655440002"))
 	if !ok {
 		t.Error("UUID from nested.org not found in UuidMap")
 	} else {

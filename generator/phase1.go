@@ -179,8 +179,8 @@ func extractTagsFromAST(doc *org.Document) []string {
 	return nil
 }
 
-func extractUUIDsFromAST(doc *org.Document) map[string]int {
-	uuidToHeaderIndex := make(map[string]int)
+func extractUUIDsFromAST(doc *org.Document) UUIDMap {
+	uuidToHeaderIndex := make(UUIDMap)
 
 	var walkNodes func(node org.Node)
 	walkNodes = func(node org.Node) {
@@ -189,9 +189,9 @@ func extractUUIDsFromAST(doc *org.Document) map[string]int {
 				// Iterate through all properties to find multiple ID entries
 				for _, prop := range headline.Properties.Properties {
 					if prop[0] == "ID" && prop[1] != "" {
-						id := prop[1]
-						if isValidUUID(id) {
-							uuidToHeaderIndex[id] = headline.Index
+						id := UUID(prop[1])
+						if isValidUUID(string(id)) {
+							uuidToHeaderIndex[id] = HeaderIndex(headline.Index)
 						}
 					}
 				}

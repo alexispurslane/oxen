@@ -104,16 +104,16 @@ func SetupTemplates(absPath string) (*template.Template, *template.Template, *te
 func GenerateHtmlPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *template.Template) GenerationResult {
 	slog.Debug("Starting Phase 2: generating HTML pages", "file_count", len(procFiles.Files))
 
-	uuidToPath := make(map[string]HeaderLocation)
+	uuidToPath := make(map[UUID]HeaderLocation)
 	procFiles.UuidMap.Range(func(key, value any) bool {
-		if k, ok := key.(string); ok {
+		if k, ok := key.(UUID); ok {
 			if v, ok := value.(HeaderLocation); ok {
 				uuidToPath[k] = v
 			} else {
 				slog.Warn("Warning: unexpected type in UuidMap value", "value", value)
 			}
 		} else {
-			slog.Warn("Warning: unexpected type in UuidMap key", "key", key)
+			slog.Warn("Warning: unexpected type in UuidMap key", "key", key, "type", fmt.Sprintf("%T", key))
 		}
 		return true
 	})
@@ -147,7 +147,7 @@ func GenerateHtmlPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templa
 	}
 }
 
-func generateHTML(fi FileInfo, ctx BuildContext, uuidToPath map[string]HeaderLocation, tmpl *template.Template) error {
+func generateHTML(fi FileInfo, ctx BuildContext, uuidToPath map[UUID]HeaderLocation, tmpl *template.Template) error {
 	if fi.Path == "sitemap-preamble.org" {
 		slog.Debug("Skipping sitemap-preamble.org from HTML generation")
 		return nil
@@ -205,7 +205,7 @@ func generateHTML(fi FileInfo, ctx BuildContext, uuidToPath map[string]HeaderLoc
 
 type uuidReplacingWriter struct {
 	*org.HTMLWriter
-	uuidToPath  map[string]HeaderLocation
+	uuidToPath  map[UUID]HeaderLocation
 	currentPath string
 }
 
@@ -215,8 +215,9 @@ func (w *uuidReplacingWriter) WriterWithExtensions() org.Writer {
 
 func (w *uuidReplacingWriter) WriteRegularLink(link org.RegularLink) {
 	if link.Protocol == "id" && strings.HasPrefix(link.URL, "id:") {
-		uuid := strings.TrimPrefix(link.URL, "id:")
-		if len(uuid) >= 36 && isValidUUID(uuid) {
+		uuidStr := strings.TrimPrefix(link.URL, "id:")
+		if len(uuidStr) >= 36 && isValidUUID(uuidStr) {
+			uuid := UUID(uuidStr)
 			if targetPath, ok := w.uuidToPath[uuid]; ok {
 				currentDir := filepath.Dir(w.currentPath)
 				targetDir := filepath.Dir(targetPath.FilePath)
@@ -235,7 +236,7 @@ func (w *uuidReplacingWriter) WriteRegularLink(link org.RegularLink) {
 	w.HTMLWriter.WriteRegularLink(link)
 }
 
-func convertOrgToHTMLWithLinkReplacement(doc *org.Document, fi FileInfo, uuidToPath map[string]HeaderLocation) (string, error) {
+func convertOrgToHTMLWithLinkReplacement(doc *org.Document, fi FileInfo, uuidToPath map[UUID]HeaderLocation) (string, error) {
 	htmlWriter := org.NewHTMLWriter()
 	writer := &uuidReplacingWriter{
 		HTMLWriter:  htmlWriter,
