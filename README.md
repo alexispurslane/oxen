@@ -14,6 +14,26 @@ What makes Oxen different:
 6. **Near-Instant Feedback**: a full from-scratch rebuild of a 140-file, 700-UUID, 700,000-word project takes about 500 milliseconds. When you combine that performance with watch mode and the built-in dev server with live reload, you get an instant feedback loop for writing and editing. Save a file, and within half a second at most (it also has incremental builds) your browser refreshes with the changes.
 7. An aspiration to be **[Finished Software](https://josem.co/the-beauty-of-finished-software/)**: Oxen, at some point soon, should be done with a capital-D. There are only so many features you need in an SSG for org-mode second brains, really!
 
+## Table of Contents
+
+- [What it does](#what-it-does)
+- [Getting started](#getting-started)
+  - [Building from source](#building-from-source)
+  - [Building your site](#building-your-site)
+  - [Configuration](#configuration)
+  - [Watching for changes](#watching-for-changes)
+  - [Live preview with server](#live-preview-with-server)
+- [How it works](#how-it-works)
+- [Looking up content by ID](#looking-up-content-by-id)
+- [Templates](#templates)
+  - [Template Arguments](#template-arguments)
+- [Configuration](#configuration-1)
+  - [Configuration File Location](#configuration-file-location)
+  - [Configuration Properties](#configuration-properties)
+  - [Command-Line Configuration](#command-line-configuration)
+- [Project structure](#project-structure)
+- [License](#license)
+
 ## What it does
 
 Org-mode has built-in support for UUIDs as global identifiers for entries through the built in `org-id.el` package. These are stored as `:ID:` properties in your org files and serve as automatically generated filesystem-location and section-title invariant references to content. Instead of linking to files by their path in the filesystem hierarchy, or sections by title name, you link to content by these persistent IDs. If you move or rename a file or a section, the links still work because the ID travels with the entry.
@@ -90,7 +110,7 @@ This starts a web server on port 8080 (you can change this with `-p` or `--port`
 
 The live reload works by injecting a small script into generated HTML pages that opens a connection to the server. When the rebuild completes, the server sends a signal to all connected browsers telling them to refresh.
 
-## Looking up content by ID
+### Looking up content by ID
 
 Since Oxen already builds an in-memory index of all UUIDs and their locations, it gives you a command to look them up:
 
