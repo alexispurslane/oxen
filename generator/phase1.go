@@ -15,7 +15,7 @@ import (
 )
 
 // FindAndProcessOrgFiles walks absPath discovering .org files,
-// then parses each to extract titles, tags, previews, last
+// then parses each in parallel to extract titles, tags, previews, last
 // modification times, and UUIDs. Returns a ProcessedFiles
 // containing all discovered files along with populated UuidMap
 // and TagMap for cross-reference lookups, plus a GenerationResult.
@@ -67,6 +67,8 @@ func FindAndProcessOrgFiles(_ *ProcessedFiles, ctx BuildContext) (*ProcessedFile
 	}
 }
 
+// collectOrgFiles walks the directory tree and collects all .org files.
+// This runs sequentially - parallel processing happens during processFile().
 func collectOrgFiles(root string) []FileInfo {
 	slog.Debug("Scanning directory for .org files", "root", root)
 	var files []FileInfo
