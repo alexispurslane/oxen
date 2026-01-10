@@ -1,6 +1,7 @@
 package generator_test
 
 import (
+	"encoding/xml"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -90,7 +91,7 @@ This is the actual home page.
 		t.Errorf("Expected subdir/doc2.org for 550e8400-e29b-41d4-a716-446655440002, got %v", uuid2)
 	}
 
-	pageTmpl, tagTmpl, indexTmpl, _, err := generator.SetupTemplates(tmpDir)
+	pageTmpl, tagTmpl, indexTmpl, _, _, err := generator.SetupTemplates(tmpDir)
 	if err != nil {
 		t.Fatalf("SetupTemplates failed: %v", err)
 	}
@@ -197,7 +198,7 @@ Link to [[id:550e8400-e29b-41d4-a716-446655440010][Root]] and [[id:550e8400-e29b
 		t.Errorf("Expected 4 files scanned, got %d", result1.TotalFilesScanned)
 	}
 
-	pageTmpl, _, _, _, err := generator.SetupTemplates(tmpDir)
+	pageTmpl, _, _, _, _, err := generator.SetupTemplates(tmpDir)
 	if err != nil {
 		t.Fatalf("SetupTemplates failed: %v", err)
 	}
@@ -301,7 +302,7 @@ Different link styles:
 		t.Errorf("Expected 4 files with UUIDs, got %d", result1.FilesWithUUIDs)
 	}
 
-	pageTmpl, _, _, _, err := generator.SetupTemplates(tmpDir)
+	pageTmpl, _, _, _, _, err := generator.SetupTemplates(tmpDir)
 	if err != nil {
 		t.Fatalf("SetupTemplates failed: %v", err)
 	}
@@ -336,6 +337,13 @@ func createTempDir(t *testing.T, prefix string) string {
 
 func createTestFile(t *testing.T, dir, filename, content string) {
 	err := os.WriteFile(filepath.Join(dir, filename), []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("Failed to create test file %s: %v", filename, err)
+	}
+}
+
+func createTestFileWithModTime(t *testing.T, dir, filename, content string, modTime time.Time) {
+	err := generator.CreateTestFileWithModTime(dir, filename, []byte(content), modTime)
 	if err != nil {
 		t.Fatalf("Failed to create test file %s: %v", filename, err)
 	}
@@ -414,5 +422,196 @@ func verifyNoBrokenIDLinks(t *testing.T, destDir string) {
 	})
 	if err != nil {
 		t.Fatalf("Failed to walk destDir: %v", err)
+	}
+}
+
+type AtomFeed struct {
+	XMLName xml.Name    `xml:"http://www.w3.org/2005/Atom feed"`
+	Title   string      `xml:"title"`
+	Links   []AtomLink  `xml:"link"`
+	ID      string      `xml:"id"`
+	Updated string      `xml:"updated"`
+	Entries []AtomEntry `xml:"entry"`
+}
+
+type AtomLink struct {
+	Href string `xml:"href,attr"`
+	Rel  string `xml:"rel,attr,omitempty"`
+}
+
+type AtomEntry struct {
+	Title      string         `xml:"title"`
+	Links      []AtomLink     `xml:"link"`
+	ID         string         `xml:"id"`
+	Updated    string         `xml:"updated"`
+	Summary    string         `xml:"summary"`
+	Categories []AtomCategory `xml:"category"`
+}
+
+type AtomCategory struct {
+	Term string `xml:"term,attr"`
+}
+
+func TestE2E_AtomFeed(t *testing.T) {
+	tmpDir := createTempDir(t, "e2e-atom-")
+	defer os.RemoveAll(tmpDir)
+
+	destDir := filepath.Join(tmpDir, "public")
+	os.MkdirAll(destDir, 0755)
+
+	now := time.Now()
+	// Create post1.org first (older timestamp)
+	createTestFileWithModTime(t, tmpDir, "post1.org", `#+title: First Post
+* First Post :blog:tech:
+:PROPERTIES:
+:ID:       550e8400-e29b-41d4-a716-446655440001
+:END:
+
+This is a blog post about Go programming.
+
+It has multiple paragraphs for testing previews.`, now.Add(-1*time.Hour))
+
+	// Create post2.org second (newer timestamp - should appear first in feed)
+	createTestFileWithModTime(t, tmpDir, "post2.org", `#+title: Second Post  
+* Second Post :blog:
+:PROPERTIES:
+:ID:       550e8400-e29b-41d4-a716-446655440002
+:END:
+
+This post covers testing and validation.
+
+Using multiple paragraphs ensures proper preview extraction.`, now)
+
+	ctx := &generator.BuildContext{
+		Root:         tmpDir,
+		DestDir:      destDir,
+		ForceRebuild: true,
+		TmplModTime:  time.Now(),
+		SiteName:     "Test Blog",
+	}
+
+	procFiles, _ := generator.FindAndProcessOrgFiles(nil, *ctx)
+
+	_, _, _, atomTmpl, _, err := generator.SetupTemplates(tmpDir)
+	if err != nil {
+		t.Fatalf("SetupTemplates failed: %v", err)
+	}
+
+	result := generator.GenerateAtomFeed(procFiles, *ctx, atomTmpl)
+	if result.Errors != 0 {
+		t.Errorf("GenerateAtomFeed() errors = %v, want 0", result.Errors)
+	}
+
+	feedPath := filepath.Join(destDir, "feed.xml")
+	data, err := os.ReadFile(feedPath)
+	if err != nil {
+		t.Fatalf("Failed to read feed.xml: %v", err)
+	}
+
+	var feed AtomFeed
+	if err := xml.Unmarshal(data, &feed); err != nil {
+		t.Fatalf("Failed to parse feed.xml: %v", err)
+	}
+
+	if feed.Title != "Test Blog" {
+		t.Errorf("Feed title = %q, want %q", feed.Title, "Test Blog")
+	}
+
+	if len(feed.Links) < 2 {
+		t.Errorf("Feed should have at least 2 links, got %d", len(feed.Links))
+	} else {
+		hasSelf := false
+		hasAlternate := false
+		for _, link := range feed.Links {
+			if link.Rel == "self" {
+				hasSelf = true
+				if !strings.Contains(link.Href, "/feed.xml") {
+					t.Errorf("Self link href = %q, should contain /feed.xml", link.Href)
+				}
+			} else if link.Rel == "" {
+				hasAlternate = true
+				if !strings.HasSuffix(link.Href, "/") {
+					t.Errorf("Alternate link href = %q, should end with /", link.Href)
+				}
+			}
+		}
+		if !hasSelf {
+			t.Error("Feed missing self link")
+		}
+		if !hasAlternate {
+			t.Error("Feed missing alternate link")
+		}
+	}
+
+	if !strings.HasSuffix(feed.ID, "/") {
+		t.Errorf("Feed ID = %q, should end with /", feed.ID)
+	}
+
+	if feed.Updated == "" {
+		t.Error("Feed missing updated timestamp")
+	}
+
+	if len(feed.Entries) != 2 {
+		t.Fatalf("Feed should have 2 entries, got %d", len(feed.Entries))
+	}
+
+	// Expected order (most recent first):
+	// Entry 0: post2.org (Second Post, newer timestamp, blog tag)
+	// Entry 1: post1.org (First Post, older timestamp, blog:tech tags)
+
+	entry1 := feed.Entries[0]
+	if entry1.Title != "Second Post" {
+		t.Errorf("First entry title = %q, want %q", entry1.Title, "Second Post")
+	}
+
+	if len(entry1.Links) != 1 {
+		t.Errorf("First entry should have 1 link, got %d", len(entry1.Links))
+	} else if !strings.Contains(entry1.Links[0].Href, ".html") {
+		t.Errorf("First entry link href = %q, should contain .html", entry1.Links[0].Href)
+	}
+
+	if entry1.ID == "" {
+		t.Error("First entry missing ID")
+	}
+
+	if entry1.Updated == "" {
+		t.Error("First entry missing updated timestamp")
+	}
+
+	if !strings.Contains(entry1.Summary, "testing and validation") {
+		t.Errorf("First entry summary = %q, should contain 'testing and validation'", entry1.Summary)
+	}
+
+	expectedCategories1 := map[string]bool{"blog": false}
+	for _, cat := range entry1.Categories {
+		if _, exists := expectedCategories1[cat.Term]; exists {
+			expectedCategories1[cat.Term] = true
+		}
+	}
+	for cat, found := range expectedCategories1 {
+		if !found {
+			t.Errorf("First entry missing category %q", cat)
+		}
+	}
+
+	entry2 := feed.Entries[1]
+	if entry2.Title != "First Post" {
+		t.Errorf("Second entry title = %q, want %q", entry2.Title, "First Post")
+	}
+
+	if !strings.Contains(entry2.Summary, "Go programming") {
+		t.Errorf("Second entry summary = %q, should contain 'Go programming'", entry2.Summary)
+	}
+
+	expectedCategories2 := map[string]bool{"blog": false, "tech": false}
+	for _, cat := range entry2.Categories {
+		if _, exists := expectedCategories2[cat.Term]; exists {
+			expectedCategories2[cat.Term] = true
+		}
+	}
+	for cat, found := range expectedCategories2 {
+		if !found {
+			t.Errorf("Second entry missing category %q", cat)
+		}
 	}
 }

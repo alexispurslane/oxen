@@ -12,12 +12,12 @@ func TestSetupTemplates_Embedded(t *testing.T) {
 	tmpDir := MustCreateTempDir(t, "test-templates-")
 	defer CleanupTempDir(tmpDir)
 
-	pageTmpl, tagTmpl, indexTmpl, modTime, err := SetupTemplates(tmpDir)
+	pageTmpl, tagTmpl, indexTmpl, atomTmpl, modTime, err := SetupTemplates(tmpDir)
 	if err != nil {
 		t.Fatalf("SetupTemplates() error = %v", err)
 	}
 
-	if pageTmpl == nil || tagTmpl == nil || indexTmpl == nil {
+	if pageTmpl == nil || tagTmpl == nil || indexTmpl == nil || atomTmpl == nil {
 		t.Error("SetupTemplates() returned nil template(s)")
 	}
 
@@ -42,13 +42,14 @@ func TestSetupTemplates_Custom(t *testing.T) {
 	os.WriteFile(filepath.Join(templatesDir, "page-template.html"), []byte(pageTmpl), 0644)
 	os.WriteFile(filepath.Join(templatesDir, "tag-page-template.html"), []byte(tagTmpl), 0644)
 	os.WriteFile(filepath.Join(templatesDir, "index-page-template.html"), []byte(indexTmpl), 0644)
+	os.WriteFile(filepath.Join(templatesDir, "atom-template.xml"), []byte("<?xml version=\"1.0\"?>"), 0644)
 
-	page, tag, index, modTime, err := SetupTemplates(tmpDir)
+	page, tag, index, atom, modTime, err := SetupTemplates(tmpDir)
 	if err != nil {
 		t.Fatalf("SetupTemplates() error = %v", err)
 	}
 
-	if page == nil || tag == nil || index == nil {
+	if page == nil || tag == nil || index == nil || atom == nil {
 		t.Error("SetupTemplates() returned nil template(s)")
 	}
 
@@ -67,14 +68,14 @@ func TestSetupTemplates_InvalidCustom(t *testing.T) {
 	// Create invalid template
 	os.WriteFile(filepath.Join(templatesDir, "base-template.html"), []byte("{{.Invalid"), 0644)
 
-	_, _, _, _, err := SetupTemplates(tmpDir)
+	_, _, _, _, _, err := SetupTemplates(tmpDir)
 	if err == nil {
 		t.Error("SetupTemplates() expected error for invalid template, got nil")
 	}
 }
 
 func TestExecuteTemplates_Embedded(t *testing.T) {
-	pageTmpl, tagTmpl, indexTmpl, _, err := SetupTemplates("/nonexistent") // Force embedded
+	pageTmpl, tagTmpl, indexTmpl, _, _, err := SetupTemplates("/nonexistent") // Force embedded
 	if err != nil {
 		t.Fatalf("SetupTemplates() error = %v", err)
 	}
@@ -162,13 +163,15 @@ func TestExecuteTemplates_Custom(t *testing.T) {
 	pageContents := `{{define "content"}}<article><h1>CUSTOM: {{.Title}}</h1><div class="content">{{.Content}}</div><footer>{{.SiteName}}</footer></article>{{end}}{{template "base-template.html" .}}`
 	tagContents := `{{define "content"}}<section><h1>CUSTOM TAG: {{.Title}}</h1><p>{{len .Files}} files</p><ul>{{range .Files}}<li>{{.Title}}</li>{{end}}</ul><footer>{{.SiteName}}</footer></section>{{end}}{{template "base-template.html" .}}`
 	indexContents := `{{define "content"}}<main><h1>CUSTOM INDEX</h1><section class="recent">{{range .RecentFiles}}{{.Title}}{{end}}</section><section class="tags">{{range .Tags}}{{.Name}}:{{.Count}}{{end}}</section><div class="content">{{.Content}}</div><footer>{{.SiteName}}</footer></main>{{end}}{{template "base-template.html" .}}`
+	atomContents := `<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom"><title>{{.SiteName}}</title></feed>`
 
 	os.WriteFile(filepath.Join(templatesDir, "base-template.html"), []byte(baseContents), 0644)
 	os.WriteFile(filepath.Join(templatesDir, "page-template.html"), []byte(pageContents), 0644)
 	os.WriteFile(filepath.Join(templatesDir, "tag-page-template.html"), []byte(tagContents), 0644)
 	os.WriteFile(filepath.Join(templatesDir, "index-page-template.html"), []byte(indexContents), 0644)
+	os.WriteFile(filepath.Join(templatesDir, "atom-template.xml"), []byte(atomContents), 0644)
 
-	pageTmpl, tagTmpl, indexTmpl, _, err := SetupTemplates(tmpDir)
+	pageTmpl, tagTmpl, indexTmpl, _, _, err := SetupTemplates(tmpDir)
 	if err != nil {
 		t.Fatalf("SetupTemplates() error = %v", err)
 	}

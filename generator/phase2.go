@@ -18,10 +18,13 @@ import (
 // SetupTemplates loads and parses HTML templates from the templates directory
 // or from the embedded filesystem. Returns the parsed templates and the base template
 // modification time for cache validation.
-func SetupTemplates(absPath string) (*template.Template, *template.Template, *template.Template, time.Time, error) {
+func SetupTemplates(absPath string) (*template.Template, *template.Template, *template.Template, *template.Template, time.Time, error) {
 	funcMap := template.FuncMap{
 		"pathNoExt": func(path string) string {
 			return strings.TrimSuffix(path, ".org")
+		},
+		"formatRFC3339": func(t time.Time) string {
+			return t.Format(time.RFC3339)
 		},
 	}
 
@@ -34,41 +37,48 @@ func SetupTemplates(absPath string) (*template.Template, *template.Template, *te
 		slog.Debug("Using custom templates from directory", "path", templatesDir)
 	}
 
-	var pageTmpl, tagTmpl, indexTmpl *template.Template
+	var pageTmpl, tagTmpl, indexTmpl, atomTmpl *template.Template
 
 	if useFS {
 		baseTmplPath := filepath.Join(templatesDir, "base-template.html")
 		baseTmpl, err := template.New("base-template.html").Funcs(funcMap).ParseFiles(baseTmplPath)
 		if err != nil {
-			return nil, nil, nil, time.Time{}, fmt.Errorf("failed to parse base template: %w", err)
+			return nil, nil, nil, nil, time.Time{}, fmt.Errorf("failed to parse base template: %w", err)
 		}
 
 		pageTmpl, err = template.Must(baseTmpl.Clone()).ParseFiles(
 			filepath.Join(templatesDir, "page-template.html"),
 		)
 		if err != nil {
-			return nil, nil, nil, time.Time{}, fmt.Errorf("failed to parse page template: %w", err)
+			return nil, nil, nil, nil, time.Time{}, fmt.Errorf("failed to parse page template: %w", err)
 		}
 
 		tagTmpl, err = template.Must(baseTmpl.Clone()).ParseFiles(
 			filepath.Join(templatesDir, "tag-page-template.html"),
 		)
 		if err != nil {
-			return nil, nil, nil, time.Time{}, fmt.Errorf("failed to parse tag template: %w", err)
+			return nil, nil, nil, nil, time.Time{}, fmt.Errorf("failed to parse tag template: %w", err)
 		}
 
 		indexTmpl, err = template.Must(baseTmpl.Clone()).ParseFiles(
 			filepath.Join(templatesDir, "index-page-template.html"),
 		)
 		if err != nil {
-			return nil, nil, nil, time.Time{}, fmt.Errorf("failed to parse index template: %w", err)
+			return nil, nil, nil, nil, time.Time{}, fmt.Errorf("failed to parse index template: %w", err)
+		}
+
+		atomTmpl, err = template.New("atom-template.xml").ParseFiles(
+			filepath.Join(templatesDir, "atom-template.xml"),
+		)
+		if err != nil {
+			return nil, nil, nil, nil, time.Time{}, fmt.Errorf("failed to parse atom template: %w", err)
 		}
 
 		info, err := os.Stat(baseTmplPath)
 		if err != nil {
-			return pageTmpl, tagTmpl, indexTmpl, time.Time{}, nil
+			return pageTmpl, tagTmpl, indexTmpl, atomTmpl, time.Time{}, nil
 		}
-		return pageTmpl, tagTmpl, indexTmpl, info.ModTime(), nil
+		return pageTmpl, tagTmpl, indexTmpl, atomTmpl, info.ModTime(), nil
 	} else {
 		var err error
 		pageTmpl, err = template.New("page-template.html").Funcs(funcMap).ParseFS(templates,
@@ -76,7 +86,7 @@ func SetupTemplates(absPath string) (*template.Template, *template.Template, *te
 			"templates/page-template.html",
 		)
 		if err != nil {
-			return nil, nil, nil, time.Time{}, fmt.Errorf("failed to parse page template: %w", err)
+			return nil, nil, nil, nil, time.Time{}, fmt.Errorf("failed to parse page template: %w", err)
 		}
 
 		tagTmpl, err = template.New("tag-page-template.html").Funcs(funcMap).ParseFS(templates,
@@ -84,7 +94,7 @@ func SetupTemplates(absPath string) (*template.Template, *template.Template, *te
 			"templates/tag-page-template.html",
 		)
 		if err != nil {
-			return nil, nil, nil, time.Time{}, fmt.Errorf("failed to parse tag template: %w", err)
+			return nil, nil, nil, nil, time.Time{}, fmt.Errorf("failed to parse tag template: %w", err)
 		}
 
 		indexTmpl, err = template.New("index-page-template.html").Funcs(funcMap).ParseFS(templates,
@@ -92,9 +102,16 @@ func SetupTemplates(absPath string) (*template.Template, *template.Template, *te
 			"templates/index-page-template.html",
 		)
 		if err != nil {
-			return nil, nil, nil, time.Time{}, fmt.Errorf("failed to parse index template: %w", err)
+			return nil, nil, nil, nil, time.Time{}, fmt.Errorf("failed to parse index template: %w", err)
 		}
-		return pageTmpl, tagTmpl, indexTmpl, time.Now(), nil
+
+		atomTmpl, err = template.New("atom-template.xml").Funcs(funcMap).ParseFS(templates,
+			"templates/atom-template.xml",
+		)
+		if err != nil {
+			return nil, nil, nil, nil, time.Time{}, fmt.Errorf("failed to parse atom template: %w", err)
+		}
+		return pageTmpl, tagTmpl, indexTmpl, atomTmpl, time.Now(), nil
 	}
 }
 

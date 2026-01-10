@@ -9,6 +9,7 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/niklasfasching/go-org/org"
 )
@@ -174,6 +175,71 @@ func GenerateIndexPage(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templa
 
 	slog.Debug("Phase 3b complete: generated index page", "path", outputPath, "recent_files", len(recentFiles), "tags", len(tags))
 
+	result.FilesGenerated = 1
+	return
+}
+
+// GenerateAtomFeed creates an Atom feed with the most recent files.
+// Writes output to ctx.DestDir/feed.xml. Returns a GenerationResult.
+func GenerateAtomFeed(procFiles *ProcessedFiles, ctx BuildContext, tmpl *template.Template) (result GenerationResult) {
+	slog.Debug("Starting Phase 3d: generating Atom feed")
+
+	publicDir := ctx.DestDir
+	outputPath := filepath.Join(publicDir, "feed.xml")
+
+	if !ctx.ForceRebuild {
+		if feedInfo, err := os.Stat(outputPath); err == nil {
+			oldestFileTime := time.Now()
+			for _, fi := range procFiles.Files {
+				if fi.ModTime.Before(oldestFileTime) {
+					oldestFileTime = fi.ModTime
+				}
+			}
+			if !oldestFileTime.After(feedInfo.ModTime()) && !ctx.TmplModTime.After(feedInfo.ModTime()) {
+				slog.Debug("Skipping Atom feed: cache valid")
+				result.FilesSkipped = 1
+				return
+			}
+		}
+	}
+
+	recentFiles := make([]FileInfo, 0, 20)
+	if len(procFiles.Files) > 0 {
+		sorted := make([]FileInfo, len(procFiles.Files))
+		copy(sorted, procFiles.Files)
+		sort.Slice(sorted, func(i, j int) bool {
+			return sorted[i].ModTime.After(sorted[j].ModTime)
+		})
+		if len(sorted) > 20 {
+			recentFiles = sorted[:20]
+		} else {
+			recentFiles = sorted
+		}
+	}
+
+	feedData := AtomFeedData{
+		SiteName: ctx.SiteName,
+		BaseURL:  "", // TODO: Add base URL to BuildContext
+		Updated:  time.Now(),
+		Files:    recentFiles,
+	}
+
+	var outputBuf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&outputBuf, "atom-template.xml", feedData); err != nil {
+		slog.Warn("Failed to execute Atom template", "error", err)
+		result.Errors = 1
+		return
+	}
+
+	if err := os.WriteFile(outputPath, outputBuf.Bytes(), 0644); err != nil {
+		slog.Warn("Failed to write Atom feed", "error", err)
+		result.Errors = 1
+		return
+	}
+
+	slog.Debug("Phase 3d complete: generated Atom feed", "path", outputPath, "entries", len(recentFiles))
+
+	result.FeedGenerated = true
 	result.FilesGenerated = 1
 	return
 }

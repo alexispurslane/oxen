@@ -1,0 +1,21 @@
+{{ define "atom-template.xml" }}<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>{{ .SiteName }}</title>
+  <link href="{{ .BaseURL }}/feed.xml" rel="self" />
+  <link href="{{ .BaseURL }}/" />
+  <id>{{ .BaseURL }}/</id>
+  <updated>{{ .Updated | formatRFC3339 }}</updated>
+  {{ range .Files }}
+  <entry>
+    <title>{{ .Title }}</title>
+    <link href="{{ $.BaseURL }}/{{ .Path | pathNoExt }}.html" />
+    <id>{{ $.BaseURL }}/{{ .Path | pathNoExt }}.html</id>
+    <updated>{{ .ModTime | formatRFC3339 }}</updated>
+    <summary>{{ .Preview }}</summary>
+    {{ range .Tags }}
+    <category term="{{ . }}" />
+    {{ end }}
+  </entry>
+  {{ end }}
+</feed>
+{{ end }}

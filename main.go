@@ -64,13 +64,14 @@ func buildSite(root string, forceRebuild bool, destDir string, siteName string) 
 	procFiles, result := generator.NewPipeline(ctx).
 		WithFullPhase(generator.FindAndProcessOrgFiles).
 		WithOutputOnlyPhase(func(procFiles *generator.ProcessedFiles, ctx generator.BuildContext) generator.GenerationResult {
-			pageTmpl, tagTmpl, indexTmpl, _, err := generator.SetupTemplates(absPath)
+			pageTmpl, tagTmpl, indexTmpl, atomTmpl, _, err := generator.SetupTemplates(absPath)
 			if err != nil {
 				return generator.GenerationResult{Errors: 1}
 			}
 			return generator.GenerateHtmlPages(procFiles, ctx, pageTmpl).Add(
 				generator.GenerateTagPages(procFiles, ctx, tagTmpl)).Add(
-				generator.GenerateIndexPage(procFiles, ctx, indexTmpl))
+				generator.GenerateIndexPage(procFiles, ctx, indexTmpl)).Add(
+				generator.GenerateAtomFeed(procFiles, ctx, atomTmpl))
 		}).
 		WithOutputOnlyPhase(generator.CopyStaticFiles).
 		Execute()

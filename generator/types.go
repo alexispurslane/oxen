@@ -54,7 +54,7 @@ var (
 	reWhitespace      = regexp.MustCompile(`\s+`)
 )
 
-//go:embed templates/*.html
+//go:embed templates/*.html templates/*.xml
 var templates embed.FS
 
 type FileInfo struct {
@@ -91,6 +91,13 @@ type IndexPageData struct {
 	SiteName    string
 }
 
+type AtomFeedData struct {
+	SiteName string
+	BaseURL  string
+	Updated  time.Time
+	Files    []FileInfo
+}
+
 type GenerationResult struct {
 	TotalFilesScanned int
 	FilesWithUUIDs    int
@@ -98,6 +105,7 @@ type GenerationResult struct {
 	FilesSkipped      int
 	TagPagesGenerated int
 	StaticFilesCopied int
+	FeedGenerated     bool
 	Errors            int
 	startTime         time.Time
 }
@@ -147,6 +155,9 @@ func (r GenerationResult) PrintSummary(procFiles *ProcessedFiles) {
 	fmt.Printf("Files skipped:        %s\n", pastelBlue(r.FilesSkipped))
 	fmt.Printf("Tag pages generated:  %s\n", pastelGreen(r.TagPagesGenerated))
 	fmt.Printf("Static files copied:  %s\n", pastelGreen(r.StaticFilesCopied))
+	if r.FeedGenerated {
+		fmt.Printf("Feed generated:       %s\n", pastelGreen("Yes"))
+	}
 
 	if r.Errors > 0 {
 		fmt.Printf("Errors:               %s\n", pastelRed(r.Errors))
