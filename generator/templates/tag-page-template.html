@@ -1,5 +1,11 @@
 {{define "title"}}Tag: {{.Title}}{{end}}
 
+{{define "og_title"}}Tag: {{.Title}} - {{.SiteName}}{{end}}
+
+{{define "og_description"}}Tag: {{.Title}} ({{len .Files}} files){{if .Files}}: {{range $i, $file := .Files}}{{if lt $i 5}}{{if $i}}, {{end}}{{$file.Title}}{{end}}{{end}}{{if gt (len .Files) 5}}, and {{sub (len .Files) 5}} more{{end}}{{end}}{{end}}
+
+{{define "og_type"}}article{{end}}
+
 {{define "header"}}
 <header>
   <h1>Tag: {{.Title}}</h1>

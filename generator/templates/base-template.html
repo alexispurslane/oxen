@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{block "title" .}}{{.SiteName}}{{end}}</title>
+    <meta property="og:type" content="{{block "og_type" .}}website{{end}}">
+    <meta property="og:title" content="{{block "og_title" .}}{{.SiteName}}{{end}}">
+    <meta property="og:description" content="{{block "og_description" .}}{{end}}">
+    <meta property="og:site_name" content="{{.SiteName}}">
+    <meta property="og:locale" content="en_US">
+    {{block "og_article_dates" .}}{{end}}
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>

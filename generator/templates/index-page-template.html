@@ -1,5 +1,11 @@
 {{define "title"}}{{.SiteName}} - Sitemap{{end}}
 
+{{define "og_title"}}{{.SiteName}} - Sitemap{{end}}
+
+{{define "og_description"}}Sitemap for {{.SiteName}}{{if .Tags}}: Tags include {{range $i, $tag := .Tags}}{{if lt $i 8}}{{if $i}}, {{end}}{{$tag.Name}}{{end}}{{end}}{{if ge (len .Tags) 8}}, and {{sub (len .Tags) 8}} more{{end}}{{end}}{{end}}
+
+{{define "og_type"}}website{{end}}
+
 {{define "header"}}
 <header>
   <h1>{{.SiteName}}</h1>

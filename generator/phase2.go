@@ -26,6 +26,9 @@ func SetupTemplates(absPath string) (*template.Template, *template.Template, *te
 		"formatRFC3339": func(t time.Time) string {
 			return t.Format(time.RFC3339)
 		},
+		"sub": func(a, b int) int {
+			return a - b
+		},
 	}
 
 	templatesDir := filepath.Join(absPath, "templates")
