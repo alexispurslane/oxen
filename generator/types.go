@@ -19,6 +19,11 @@ type BuildContext struct {
 	ForceRebuild bool
 	TmplModTime  time.Time
 	SiteName     string
+	BaseURL      string
+	DefaultImage string
+	Author       string
+	LicenseName  string
+	LicenseURL   string
 }
 
 type HeaderLocation struct {
@@ -69,14 +74,24 @@ type FileInfo struct {
 
 type PageData struct {
 	FileInfo
-	Content  template.HTML
-	SiteName string
+	Content      template.HTML
+	SiteName     string
+	BaseURL      string
+	DefaultImage string
+	Author       string
+	LicenseName  string
+	LicenseURL   string
 }
 
 type TagPageData struct {
-	Title    string
-	Files    []FileInfo
-	SiteName string
+	Title        string
+	Files        []FileInfo
+	SiteName     string
+	BaseURL      string
+	DefaultImage string
+	Author       string
+	LicenseName  string
+	LicenseURL   string
 }
 
 type TagInfo struct {
@@ -85,10 +100,15 @@ type TagInfo struct {
 }
 
 type IndexPageData struct {
-	RecentFiles []FileInfo
-	Tags        []TagInfo
-	Content     template.HTML
-	SiteName    string
+	RecentFiles  []FileInfo
+	Tags         []TagInfo
+	Content      template.HTML
+	SiteName     string
+	BaseURL      string
+	DefaultImage string
+	Author       string
+	LicenseName  string
+	LicenseURL   string
 }
 
 type AtomFeedData struct {
@@ -96,6 +116,7 @@ type AtomFeedData struct {
 	BaseURL  string
 	Updated  time.Time
 	Files    []FileInfo
+	Author   string
 }
 
 type GenerationResult struct {

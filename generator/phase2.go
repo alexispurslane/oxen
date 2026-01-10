@@ -197,9 +197,14 @@ func generateHTML(fi FileInfo, ctx BuildContext, uuidToPath map[UUID]HeaderLocat
 	title = strings.ReplaceAll(title, "_", " ")
 
 	pageData := PageData{
-		FileInfo: fi,
-		Content:  template.HTML(htmlContent),
-		SiteName: ctx.SiteName,
+		FileInfo:     fi,
+		Content:      template.HTML(htmlContent),
+		SiteName:     ctx.SiteName,
+		BaseURL:      ctx.BaseURL,
+		DefaultImage: ctx.DefaultImage,
+		Author:       ctx.Author,
+		LicenseName:  ctx.LicenseName,
+		LicenseURL:   ctx.LicenseURL,
 	}
 
 	var outputBuf bytes.Buffer

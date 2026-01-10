@@ -8,7 +8,9 @@
 
 {{define "og_article_dates"}}{{if .ModTime}}
     <meta property="og:article:modified_time" content="{{.ModTime.Format "2006-01-02T15:04:05Z07:00"}}">
-    <meta property="og:article:published_time" content="{{.ModTime.Format "2006-01-02T15:04:05Z07:00"}}">{{end}}{{end}}
+    <meta property="og:article:published_time" content="{{.ModTime.Format "2006-01-02T15:04:05Z07:00"}}">{{end}}
+    {{if .BaseURL}}<meta property="og:url" content="{{.BaseURL}}/{{.Path | pathNoExt}}.html">{{end}}{{end}}
+{{define "og_image"}}{{if .DefaultImage}}{{.BaseURL}}{{.DefaultImage}}{{end}}{{end}}
 
 {{define "header"}}
 <header>

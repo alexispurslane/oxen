@@ -11,6 +11,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
+	"oxen/config"
 	"oxen/generator"
 	"oxen/server"
 )
@@ -20,13 +21,12 @@ var (
 )
 
 const (
-	defaultPort     = 8080
-	defaultDest     = "public"
-	defaultSiteName = "Neon Vagabond"
-	watchDebounce   = 100 * time.Millisecond
+	defaultPort   = 8080
+	defaultDest   = "public"
+	watchDebounce = 100 * time.Millisecond
 )
 
-func buildSite(root string, forceRebuild bool, destDir string, siteName string) error {
+func buildSite(root string, forceRebuild bool, destDir string, cfg *config.Config) error {
 	absDestDir, err := filepath.Abs(destDir)
 	if err != nil {
 		return fmt.Errorf("error getting absolute path for destDir: %w", err)
@@ -56,7 +56,12 @@ func buildSite(root string, forceRebuild bool, destDir string, siteName string) 
 		Root:         absPath,
 		DestDir:      absDestDir,
 		ForceRebuild: forceRebuild,
-		SiteName:     siteName,
+		SiteName:     cfg.SiteName,
+		BaseURL:      cfg.BaseURL,
+		DefaultImage: cfg.DefaultImage,
+		Author:       cfg.Author,
+		LicenseName:  cfg.LicenseName,
+		LicenseURL:   cfg.LicenseURL,
 	}
 
 	startTime := time.Now()
@@ -86,16 +91,15 @@ func buildSite(root string, forceRebuild bool, destDir string, siteName string) 
 	return nil
 }
 
-func runWatchMode(ctx context.Context, root string, forceRebuild bool, destDir string, siteName string) error {
+func runWatchMode(ctx context.Context, root string, forceRebuild bool, destDir string, cfg *config.Config) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("failed to create watcher: %w", err)
 	}
 	defer watcher.Close()
 
-	// Run initial build
 	fmt.Println("Starting initial build...")
-	if err := buildSite(root, forceRebuild, destDir, siteName); err != nil {
+	if err := buildSite(root, forceRebuild, destDir, cfg); err != nil {
 		slog.Error("Initial build failed", "error", err)
 	}
 
@@ -104,12 +108,10 @@ func runWatchMode(ctx context.Context, root string, forceRebuild bool, destDir s
 		return fmt.Errorf("error getting absolute path: %w", err)
 	}
 
-	// Add the root directory
 	if err := watcher.Add(absPath); err != nil {
 		return fmt.Errorf("failed to watch root directory: %w", err)
 	}
 
-	// Walk directory tree and add all subdirectories to watcher
 	destDirName := filepath.Base(destDir)
 	err = filepath.WalkDir(absPath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -126,14 +128,12 @@ func runWatchMode(ctx context.Context, root string, forceRebuild bool, destDir s
 		return fmt.Errorf("failed to walk directories: %w", err)
 	}
 
-	// Channel to signal rebuilds with file count
 	rebuildChan := make(chan int, 1)
 
 	var changedFilesCount int
 	var rebuildCount int
 	var debounceTimer *time.Timer
 
-	// Process events in a goroutine
 	go func() {
 		for {
 			select {
@@ -144,17 +144,14 @@ func runWatchMode(ctx context.Context, root string, forceRebuild bool, destDir s
 					return
 				}
 
-				// Only interested in create, write, remove, rename
 				if event.Op&(fsnotify.Create|fsnotify.Write|fsnotify.Remove|fsnotify.Rename) == 0 {
 					continue
 				}
 
-				// Skip anything in public directory
 				if strings.HasPrefix(event.Name, destDir) {
 					continue
 				}
 
-				// If a new directory is created, watch it
 				if event.Op&fsnotify.Create == fsnotify.Create {
 					if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
 						if err := watcher.Add(event.Name); err != nil {
@@ -163,10 +160,8 @@ func runWatchMode(ctx context.Context, root string, forceRebuild bool, destDir s
 					}
 				}
 
-				// Print watcher event for debugging
 				slog.Debug("Watcher event", "op", event.Op, "path", event.Name)
 
-				// Increment counter and debounce rebuild
 				changedFilesCount++
 				if debounceTimer != nil {
 					debounceTimer.Stop()
@@ -189,7 +184,6 @@ func runWatchMode(ctx context.Context, root string, forceRebuild bool, destDir s
 
 	fmt.Printf("Watching %s for changes... (Press Ctrl+C to stop)\n", absPath)
 
-	// Main watch loop
 	for {
 		numChanged := <-rebuildChan
 
@@ -200,7 +194,7 @@ func runWatchMode(ctx context.Context, root string, forceRebuild bool, destDir s
 			return "s"
 		}(), rebuildCount)
 
-		if err := buildSite(root, forceRebuild, destDir, siteName); err != nil {
+		if err := buildSite(root, forceRebuild, destDir, cfg); err != nil {
 			slog.Error("Build failed", "error", err)
 		}
 		fmt.Printf("\nWatching %s for changes... (Press Ctrl+C to stop)\n", absPath)
@@ -208,12 +202,12 @@ func runWatchMode(ctx context.Context, root string, forceRebuild bool, destDir s
 }
 
 var (
-	dir      string
-	force    bool
-	watch    bool
-	port     int
-	dest     string
-	siteName string
+	dir        string
+	force      bool
+	watch      bool
+	port       int
+	dest       string
+	configJSON string
 )
 
 func main() {
@@ -234,14 +228,20 @@ func main() {
 		Short: "Build the site from <dir>",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
+			cfg, err := config.LoadConfig(args[0], configJSON)
+			if err != nil {
+				slog.Error("Failed to load config", "error", err)
+				os.Exit(1)
+			}
+
 			if watch {
 				ctx := context.Background()
-				if err := runWatchMode(ctx, args[0], force, dest, siteName); err != nil {
+				if err := runWatchMode(ctx, args[0], force, dest, cfg); err != nil {
 					slog.Error("Watch mode failed", "error", err)
 					os.Exit(1)
 				}
 			} else {
-				if err := buildSite(args[0], force, dest, siteName); err != nil {
+				if err := buildSite(args[0], force, dest, cfg); err != nil {
 					slog.Error("Build failed", "error", err)
 					os.Exit(1)
 				}
@@ -254,6 +254,12 @@ func main() {
 		Short: "Serve the built site",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
+			cfg, err := config.LoadConfig(args[0], configJSON)
+			if err != nil {
+				slog.Error("Failed to load config", "error", err)
+				os.Exit(1)
+			}
+
 			srv = server.NewServer(dest, port)
 			go func() {
 				if err := srv.Run(); err != nil {
@@ -263,12 +269,12 @@ func main() {
 
 			if watch {
 				ctx := context.Background()
-				if err := runWatchMode(ctx, args[0], force, dest, siteName); err != nil {
+				if err := runWatchMode(ctx, args[0], force, dest, cfg); err != nil {
 					slog.Error("Watch mode failed", "error", err)
 					os.Exit(1)
 				}
 			} else {
-				if err := buildSite(args[0], force, dest, siteName); err != nil {
+				if err := buildSite(args[0], force, dest, cfg); err != nil {
 					slog.Error("Build failed", "error", err)
 					os.Exit(1)
 				}
@@ -306,13 +312,13 @@ func main() {
 	buildCmd.Flags().BoolVarP(&force, "force", "f", false, "force rebuild all files")
 	buildCmd.Flags().BoolVarP(&watch, "watch", "w", false, "watch for changes and rebuild")
 	buildCmd.Flags().StringVar(&dest, "dest", defaultDest, "output directory")
-	buildCmd.Flags().StringVar(&siteName, "site-name", defaultSiteName, "site name")
+	buildCmd.Flags().StringVar(&configJSON, "config", "", "JSON config string (overrides .oxen.json)")
 
 	serveCmd.Flags().BoolVarP(&force, "force", "f", false, "force rebuild all files")
 	serveCmd.Flags().BoolVarP(&watch, "watch", "w", false, "watch for changes and rebuild")
 	serveCmd.Flags().IntVarP(&port, "port", "p", defaultPort, "port to serve on")
 	serveCmd.Flags().StringVar(&dest, "dest", defaultDest, "output directory")
-	serveCmd.Flags().StringVar(&siteName, "site-name", defaultSiteName, "site name")
+	serveCmd.Flags().StringVar(&configJSON, "config", "", "JSON config string (overrides .oxen.json)")
 
 	rootCmd.AddCommand(buildCmd, serveCmd, lookupCmd)
 	if err := rootCmd.Execute(); err != nil {

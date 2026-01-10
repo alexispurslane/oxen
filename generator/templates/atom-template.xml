@@ -5,6 +5,7 @@
   <link href="{{ .BaseURL }}/" />
   <id>{{ .BaseURL }}/</id>
   <updated>{{ .Updated | formatRFC3339 }}</updated>
+  {{if .Author}}<author><name>{{ .Author }}</name></author>{{end}}
   {{ range .Files }}
   <entry>
     <title>{{ .Title }}</title>

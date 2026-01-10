@@ -52,9 +52,14 @@ func GenerateTagPages(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templat
 			}
 
 			tagData := TagPageData{
-				Title:    tag,
-				Files:    files,
-				SiteName: ctx.SiteName,
+				Title:        tag,
+				Files:        files,
+				SiteName:     ctx.SiteName,
+				BaseURL:      ctx.BaseURL,
+				DefaultImage: ctx.DefaultImage,
+				Author:       ctx.Author,
+				LicenseName:  ctx.LicenseName,
+				LicenseURL:   ctx.LicenseURL,
 			}
 
 			var outputBuf bytes.Buffer
@@ -154,10 +159,15 @@ func GenerateIndexPage(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templa
 	}
 
 	indexData := IndexPageData{
-		RecentFiles: recentFiles,
-		Tags:        tags,
-		Content:     preambleContent,
-		SiteName:    ctx.SiteName,
+		RecentFiles:  recentFiles,
+		Tags:         tags,
+		Content:      preambleContent,
+		SiteName:     ctx.SiteName,
+		BaseURL:      ctx.BaseURL,
+		DefaultImage: ctx.DefaultImage,
+		Author:       ctx.Author,
+		LicenseName:  ctx.LicenseName,
+		LicenseURL:   ctx.LicenseURL,
 	}
 
 	var outputBuf bytes.Buffer
@@ -219,9 +229,10 @@ func GenerateAtomFeed(procFiles *ProcessedFiles, ctx BuildContext, tmpl *templat
 
 	feedData := AtomFeedData{
 		SiteName: ctx.SiteName,
-		BaseURL:  "", // TODO: Add base URL to BuildContext
+		BaseURL:  ctx.BaseURL,
 		Updated:  time.Now(),
 		Files:    recentFiles,
+		Author:   ctx.Author,
 	}
 
 	var outputBuf bytes.Buffer

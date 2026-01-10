@@ -9,6 +9,8 @@
     <meta property="og:description" content="{{block "og_description" .}}{{end}}">
     <meta property="og:site_name" content="{{.SiteName}}">
     <meta property="og:locale" content="en_US">
+    {{if .BaseURL}}<meta property="og:url" content="{{.BaseURL}}">{{end}}
+    {{if .DefaultImage}}<meta property="og:image" content="{{.BaseURL}}{{.DefaultImage}}">{{end}}
     {{block "og_article_dates" .}}{{end}}
     <link rel="stylesheet" href="/style.css">
 </head>
@@ -39,7 +41,7 @@
   </main>
 
   <footer>
-    <p><a href='https://neonvagabond.xyz/index.html'>This work</a> by <a href='https://neonvagabond.xyz/bio.html'>Novatorine</a> is licensed under <a href='https://neonvagabond.xyz/NPL.html' target='_blank' rel='license noopener noreferrer' style='display:inline-block;'>NPL-1.0</a>; you can contact her at <a href='mailto:novatorine@proton.me'>novatorine@proton.me</a> with the PGP encryption key <a href='/publickey.novatorine@proton.me-729f391163e19b1f7da8c7155002892326306afd.asc'>here</a>.</p>
+    <p><a href='{{.BaseURL}}/index.html'>This work</a>{{if .Author}} by {{.Author}}{{end}} is licensed under {{if .LicenseURL}}<a href='{{.LicenseURL}}' target='_blank' rel='license noopener noreferrer' style='display:inline-block;'>{{if .LicenseName}}{{.LicenseName}}{{else}}a license{{end}}</a>{{else if .LicenseName}}{{.LicenseName}}{{else}}all rights reserved{{end}}{{if .Author}}; you can contact {{.Author}} for inquiries{{end}}.</p>
   </footer>
 </body>
 </html>
